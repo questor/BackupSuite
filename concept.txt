@@ -1,0 +1,38 @@
+
+
+GUI:
+- imgui for python: https://github.com/swistakm/pyimgui
+- example for python backup: https://github.com/koldinger/Tardis/tree/master/Tardis
+
+
+Preprocessors for Files:
+- Packing JPegs: https://github.com/dropbox/lepton   in slow-mode is better than google-lib
+
+		commit 24f3bbc9b31c4041d0d1caf71f3d16354379d4f3 (grafted, HEAD -> master, origin/master, origin/HEAD)
+		Author: Daniel <danielrh@dropbox.com>
+		Date:   Fri May 17 01:16:25 2019 -0700
+
+		    Merge pull request #119 from a4lg/fix-automake
+		    
+		    make automake not to install test_invariants
+
+- https://github.com/schnaader/precomp-cpp
+
+- https://github.com/packjpg/packMP3
+
+Checksumming:
+https://github.com/cmuratori/meow_hash/blob/master/meow_hash_x64_aesni.h
+
+		commit 70e01b40ee0de82017307b994ed26c457541e250 (grafted, HEAD -> master, origin/master, origin/HEAD)
+		Author: Casey Muratori <casey@mollyrocket.com>
+		Date:   Sat May 25 00:25:29 2019 -0700
+
+		    Merge pull request #46 from cmuratori/v0.5
+		    
+		    Starting code for v0.5
+
+
+
+Compressors to test:
+http://www.byronknoll.com/cmix.html
+http://mattmahoney.net/dc/zpaq.html
