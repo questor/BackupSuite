@@ -313,3 +313,48 @@ Program {
   },
 }
 Default "zpaq715"
+
+--============================================================================================--  
+
+Program {
+  Name = "precomp-cpp",
+  Sources = {
+    "precomp-cpp/precomp.cpp",
+    FGlob {
+       Dir = "precomp-cpp/contrib",
+       Extensions = { ".c", ".cpp" },
+       Filters = {
+         {Config="DISABLED"; Pattern = "crc32_tablegen.c"},
+         {Config="DISABLED"; Pattern = "crc64_tablegen.c"},
+         {Config="DISABLED"; Pattern = "main.cpp"},
+         {Config="DISABLED"; Pattern = "main2.cpp"},
+         {Config="DISABLED"; Pattern = "fastpos_tablegen.c"},
+         {Config="DISABLED"; Pattern = "price_tablegen.c"},
+       },
+    },
+  },
+  Env = {
+    CPPDEFS = {
+      "BUILD_LIB", "BIT64",
+      {Config="*-clang-*"; "LINUX", "UNIX", "HAVE_STDBOOL_H"},
+      {Config="*-msvc-*"; "_UNICODE", "UNICODE"},
+    },
+    CXXOPTS = {
+    },
+    CPPPATH = {
+      "precomp-cpp/contrib/liblzma/api",
+      "precomp-cpp/contrib/liblzma/common",
+      "precomp-cpp/contrib/liblzma/check",
+      "precomp-cpp/contrib/liblzma/lzma",
+      "precomp-cpp/contrib/liblzma/lz",
+      "precomp-cpp/contrib/liblzma/rangecoder",
+      "precomp-cpp/contrib/liblzma/simple",
+      "precomp-cpp/contrib/liblzma/delta",
+    },
+  },
+  Libs = {Config="win32-*-*"; "Comdlg32.lib", "Ole32.lib" },
+  Depends = {
+       "defaultConfiguration"
+  },
+}
+Default "precomp-cpp"

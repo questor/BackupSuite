@@ -35,17 +35,36 @@ def generateCommandListHashing(toolpath, filelist):
 
 	return cmdlist
 
-def generateCommandListCompression(toolpath, filelist):
+def generateCommandListCompression(toolpath, outputpath, filelist):
 	logging.info("generate command list for compression")
 
 	cmdlist = []
 	for file in filelist:
 		filename, extension = os.path.splitext(file)
 		# extension = '.ext'
-		if(extension == '.jpg') or (extension == 'jpeg'):
-			cmdlist.append("%s/lepton blabla %s" % (toolpath, file))
+		lowerExt = extension.lower()
+
+		#lepton compresses better than precomp-cpp on jpegs
+
+		if(lowerExt == '.jpg') or (lowerExt == '.jpeg'):
+			cmdlist.append("%s/lepton -singlethread -allowprogressive %s %s/%s.lepton" % (toolpath, file, outputpath, file))
+		elif(lowerExt == '.mp3'):			# don't recompress with lzma, it's bigger afterwards!
+			cmdlist.append("%s/precomp-cpp -lt1 -cn -o%s/%s.pcf %s" % (toolpath, outputpath, file, file))
+		elif(lowerExt == '.png') or (lowerExt == '.gif') or (lowerExt == '.pdf') or (lowerExt == 'zip') or (lowerExt == '.gzip') or (lowerExt == '.bzip2'):
+			cmdlist.append("%s/precomp-cpp -lt1 -cl -o%s/%s.pcf %s" % (toolpath, outputpath, file, file))
+			# TODO: check if here do not recompress it with lzma but instead use zpag afterwards?
+			# TODO: make list of files to be deleted afterwards because they are temporary
 		else:
-			cmdlist.append("%s/zpaq715 blabla %s" % (toolpath, file))
+			cmdlist.append("%s/zpaq715 a %s/%s.zpaq %s -m5 -t1" % (toolpath, outputpath, file, file))
+			# -m5 is dead slow :/
+			# -m4 is much faster already and still better than lzma2 from precomp-cpp
+
+			#-rwxr-xr-x 1 devenv root    2036046 Jun 13 15:49 pixelwp2.png*
+			#-rw-rw-r-- 1 devenv devenv 12543751 Jun 13 16:55 pixelwp2.pcf
+			#-rw-rw-r-- 1 devenv devenv  1726904 Jun 13 16:54 pixelwp2.pcf_LZMA
+			#-rw-rw-r-- 1 devenv devenv  1439668 Jun 13 16:56 test.zpaq (-m5) (50sec)
+			#-rw-rw-r-- 1 devenv devenv  1517409 Jun 13 16:59 test.zpaq (-m4) (13sec)
+			
 	return cmdlist
 
 if __name__ == '__main__':
@@ -85,7 +104,7 @@ if __name__ == '__main__':
 			print(result.stdout)
 
 
-	cmds = generateCommandListCompression(args.tools, files)
+	cmds = generateCommandListCompression(args.tools, args.output, files)
 
 	#for cmd in cmds:
 	#	print("cmd: %s" % (cmd))
