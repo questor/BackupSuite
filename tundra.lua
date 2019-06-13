@@ -5,7 +5,8 @@ local common = {
 		CXXOPTS = {
       {Config="*-clang-*"; "-std=c++14", "-stdlib=libstdc++", "-fPIC", "-fcolor-diagnostics"},
       {Config="*-clang-debug"; "-g", "-gsplit-dwarf", "-O0", "-fno-omit-frame-pointer"},
-      {Config="*-clang-release"; "-flto=thin", "-Os", "-fdata-sections", "-ffunction-sections", "-fno-asynchronous-unwind-tables"},
+      {Config="*-clang-release"; "-Os", "-fdata-sections", "-ffunction-sections", "-fno-asynchronous-unwind-tables"},
+      -- "-flto=thin"
       --{Config="*-clang-release"; "-fsave-optimization-record"},
       {Config="*-msvc-*"; "/FS", "/diagnostics:caret", "/cgthreads8" },      -- "-showIncludes"
       -- O1 is minsize, O2 is maxspeed
@@ -36,7 +37,7 @@ local common = {
                                 },
                                 --"/NODEFAULTLIB"
 --      {Config="*-clang-*"; "-fuse-ld=lld"},           -- makes the executable a little bit bigger than the normal linker
-      {Config="*-clang-release"; "-Wl,--gc-sections", "-flto=thin"},  -- "-Wl,--build-id"
+      {Config="*-clang-release"; "-Wl,--gc-sections"},  -- "-flto=thin", "-Wl,--build-id"
     },
     LIBS = {
       {Config="*-clang-*"; "m", "Xrandr", "Xext", "X11", "dl", "stdc++", "pthread", "stdc++fs", "GL"},
