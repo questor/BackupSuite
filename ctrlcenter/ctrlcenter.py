@@ -5,9 +5,35 @@ import argparse
 
 import logging
 
-def work(cmd):
+def runProcess(cmd):
 	result = subprocess.run(cmd, stdout=subprocess.PIPE)
 	return result
+
+uncompressToolPath = ""
+
+def uncompressAndGenerateHash(file):
+	# decompress to temp
+	filename, extension = os.path.splitext(file)
+	lowerExt = extension.lower()
+
+	if(lowerExt == '.lepton'):
+		cmd = []
+		cmd.append("%s/lepton" % uncompressToolPath)
+
+	elif(lowerExt == '.pcf'):
+		cmd = []
+		cmd.append("%s/precomp-cpp" % uncompressToolPath)
+
+	elif(lowerExt == '.zpaq'):
+		cmd = []
+		cmd.append("%s/zpaq715" % uncompressToolPath)
+
+	else:
+		return file
+
+	# calculate hash from temp file
+	# delete temp file
+
 
 def generateFilelist(path):
 	retDirs = []
@@ -101,74 +127,77 @@ if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser(description="Backup Control Script")
 	parser.add_argument('-i', '--input', help="Folder to Backup FROM", required=True)
-	parser.add_argument('-o', '--output', help="Folder to Backup TO", required=True)
+	parser.add_argument('-o', '--output', help="Folder to Backup TO", required=False)
 	parser.add_argument('-t', '--tools', help="Folder to compiled tools", required=True)
+	parser.add_argument('-c', '--create', help="Create compressed Structure from input", required=False)
+	parser.add_argument('-v', '--verify', help="Verify compressed structure", required=False)
 	args = parser.parse_args()
 
 	count = multiprocessing.cpu_count()
 	print("-Number CPUs found: %d" % (count))
 
-	dirs, files = generateFilelist(args.input)
-	print("-Found %d files" % (len(files)))
+	if(args.create):
 
-	filesizesUncompressed = getFilesizes(files)
-	print("-All filesizes uncompressed: %dMB(%d)" % (filesizesUncompressed/(1024*1024), filesizesUncompressed))
+		dirs, files = generateFilelist(args.input)
+		print("-Found %d files" % (len(files)))
 
-	#for file in files:
-	#	print("file: %s" % (file))
+		#filesizesUncompressed = getFilesizes(files)
+		#print("-All filesizes uncompressed: %dMB(%d)" % (filesizesUncompressed/(1024*1024), filesizesUncompressed))
 
-	print("-Generate hashing commands")
-	cmds = generateCommandListHashing(args.tools, files)
-	
-	#for cmd in cmds:
-	#	print("cmd: %s" % (cmd))
+		print("-Generate hashing commands")
+		cmds = generateCommandListHashing(args.tools, files)
+		
+		print("-Generating the hashes of the files")
+		pool = multiprocessing.Pool(processes=count)
 
-	print("-Generating the hashes of the files")
-	pool = multiprocessing.Pool(processes=count)
+		hashresults = []
+		for res in pool.imap_unordered(runProcess, cmds):
+			hashresults.append(res)
 
-	hashresults = []
-	for res in pool.imap_unordered(work, cmds):
-		hashresults.append(res)
+		errorfiles = []
+		hashestowrite = []
+		for result in hashresults:
+			if(result.returncode != 0):
+				print("HASHERROR: %s(%d)" % (result.stdout, result.returncode))
+				errorfiles.append(result.stdout)
+			else:
+				hashestowrite.append(result.stdout)
 
-	errorfiles = []
-	hashestowrite = []
-	for result in hashresults:
-		if(result.returncode != 0):
-			print("HASHERROR: %s(%d)" % (result.stdout, result.returncode))
-			errorfiles.append(result.stdout)
-		else:
-			#print(result.stdout)
-			hashestowrite.append(result.stdout)
+		print("-Write hashes to file in output path")
+		with open(args.output + "/filehashes.txt", 'w') as f:
+			for item in hashestowrite:
+				itemStr = item.decode('UTF-8')
+				itemStr = itemStr.replace(args.input, "")
+				f.write("%s\n" % itemStr)
+			f.close()
 
-#MeowHash 12B741B3-5929BA8F-6E329A7D-AF4FBB29 jpegs/Gpx-SP-107-2560.jpg
+		for dir in dirs:
+			dir = dir.replace(args.input, "")
+			path = os.path.join(args.output, dir)
+			os.makedirs(path, exist_ok=True)
 
-	print("-Write hashes to file in output path")
-	with open(args.output + "/filehashes.txt", 'w') as f:
-		for item in hashestowrite:
-			itemStr = item.decode('UTF-8')
-			itemStr = itemStr.replace(args.input, "")
-			f.write("%s\n" % itemStr)
-		f.close()
+		print("-Generate commands to compress data")
+		cmds = generateCommandListCompression(args.tools, args.output, files, args.input)
 
-	# TODO: create folderstructure in destination folder
-	for dir in dirs:
-		dir = dir.replace(args.input, "")
-		path = os.path.join(args.output, dir)
-		#print("create folder: %s" % (path))
-		os.makedirs(path, exist_ok=True)
+		print("-Compress all files")
+		compressresults = []
+		for res in pool.imap_unordered(runProcess, cmds):
+			compressresults.append(res)
 
-	print("-Generate commands to compress data")
-	cmds = generateCommandListCompression(args.tools, args.output, files, args.input)
-
-	print("-Compress all files")
-	#for cmd in cmds:
-	#	print("cmd: %s" % (cmd))
-	compressresults = []
-	for res in pool.imap_unordered(work, cmds):
-		compressresults.append(res)
-
-	for result in compressresults:
-		if(result.returncode != 0):
-			print("COMPRESSERROR: %s(%d)" % (result.stdout, result.returncode))
+		for result in compressresults:
+			if(result.returncode != 0):
+				print("COMPRESSERROR: %s(%d)" % (result.stdout, result.returncode))
 
 	print("-Finished!")
+
+	if(args.verify):
+		dirs, files = generateFilelist(args.input)
+		print("-Found %d files" % len(file))
+
+		uncompressToolPath = args.tools
+
+		verifyResults = []
+		for res in pool.imap_unordered(uncompressAndGenerateHash, files)
+			verifyResults.append(res)
+
+
