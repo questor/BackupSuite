@@ -6,13 +6,10 @@ import argparse
 import logging
 
 def work(cmd):
-	#logging.info("running %s" % (cmd))
 	result = subprocess.run(cmd, stdout=subprocess.PIPE)
 	return result
-	#return subprocess.call(cmd, shell=False, stderr=subprocess.PIPE)
 
 def generateFilelist(path):
-	logging.info("generate file list from: %s"%(path))
 	retDirs = []
 	retFiles = []
 	for root,directories,filenames in os.walk(path):
@@ -23,8 +20,6 @@ def generateFilelist(path):
 	return retDirs, retFiles
 
 def generateCommandListHashing(toolpath, filelist):
-	logging.info("generate command list for hashing")
-
 	cmdlist = []
 	for file in filelist:
 		cmd = []
@@ -35,9 +30,13 @@ def generateCommandListHashing(toolpath, filelist):
 
 	return cmdlist
 
-def generateCommandListCompression(toolpath, outputpath, filelist):
-	logging.info("generate command list for compression")
+def getFilesizes(filelist):
+	completeSize = 0
+	for file in filelist:
+		completeSize += os.path.getsize(file)
+	return completeSize
 
+def generateCommandListCompression(toolpath, outputpath, filelist, inputpath):
 	cmdlist = []
 	for file in filelist:
 		filename, extension = os.path.splitext(file)
@@ -46,16 +45,44 @@ def generateCommandListCompression(toolpath, outputpath, filelist):
 
 		#lepton compresses better than precomp-cpp on jpegs
 
+		outputfile = file.replace(inputpath, "")
+		outputfile = os.path.join(args.output, outputfile)
+
 		if(lowerExt == '.jpg') or (lowerExt == '.jpeg'):
-			cmdlist.append("%s/lepton -singlethread -allowprogressive %s %s/%s.lepton" % (toolpath, file, outputpath, file))
+			cmd = []
+			cmd.append("%s/lepton" % (toolpath))
+			cmd.append("-singlethread")
+			cmd.append("-allowprogressive") 
+			cmd.append("%s" % (file))
+			cmd.append("%s.lepton" % (outputfile))
+			cmdlist.append(cmd)
 		elif(lowerExt == '.mp3'):			# don't recompress with lzma, it's bigger afterwards!
-			cmdlist.append("%s/precomp-cpp -lt1 -cn -o%s/%s.pcf %s" % (toolpath, outputpath, file, file))
+			cmd = []
+			cmd.append("%s/precomp-cpp" % (toolpath))
+			cmd.append("-lt1")
+			cmd.append("-cn")
+			cmd.append("-o%s.pcf" % (outputfile))
+			cmd.append("%s" % (file))
+			cmdlist.append(cmd)
 		elif(lowerExt == '.png') or (lowerExt == '.gif') or (lowerExt == '.pdf') or (lowerExt == 'zip') or (lowerExt == '.gzip') or (lowerExt == '.bzip2'):
-			cmdlist.append("%s/precomp-cpp -lt1 -cl -o%s/%s.pcf %s" % (toolpath, outputpath, file, file))
+			cmd = []
+			cmd.append("%s/precomp-cpp" % (toolpath))
+			cmd.append("-lt1")
+			cmd.append("-cl")
+			cmd.append("-o%s.pcf" % (outputfile))
+			cmd.append("%s" % (file))
+			cmdlist.append(cmd)
 			# TODO: check if here do not recompress it with lzma but instead use zpag afterwards?
 			# TODO: make list of files to be deleted afterwards because they are temporary
 		else:
-			cmdlist.append("%s/zpaq715 a %s/%s.zpaq %s -m5 -t1" % (toolpath, outputpath, file, file))
+			cmd = []
+			cmd.append("%s/zpaq715" % (toolpath))
+			cmd.append("a")
+			cmd.append("%s.zpaq" % (outputfile))
+			cmd.append("%s" % (file))
+			cmd.append("-m4")
+			cmd.append("-t1")
+			cmdlist.append(cmd)
 			# -m5 is dead slow :/
 			# -m4 is much faster already and still better than lzma2 from precomp-cpp
 
@@ -68,7 +95,7 @@ def generateCommandListCompression(toolpath, outputpath, filelist):
 	return cmdlist
 
 if __name__ == '__main__':
-	logging.basicConfig(level=logging.INFO)
+	#logging.basicConfig(level=logging.INFO)
 
 	print("BackupIt V0.1")
 
@@ -84,6 +111,9 @@ if __name__ == '__main__':
 	dirs, files = generateFilelist(args.input)
 	print("-Found %d files" % (len(files)))
 
+	filesizesUncompressed = getFilesizes(files)
+	print("-All filesizes uncompressed: %dMB(%d)" % (filesizesUncompressed/(1024*1024), filesizesUncompressed))
+
 	#for file in files:
 	#	print("file: %s" % (file))
 
@@ -95,19 +125,50 @@ if __name__ == '__main__':
 
 	print("-Generating the hashes of the files")
 	pool = multiprocessing.Pool(processes=count)
-	hashresults = pool.map(work, cmds)
 
+	hashresults = []
+	for res in pool.imap_unordered(work, cmds):
+		hashresults.append(res)
+
+	errorfiles = []
+	hashestowrite = []
 	for result in hashresults:
 		if(result.returncode != 0):
 			print("HASHERROR: %s(%d)" % (result.stdout, result.returncode))
+			errorfiles.append(result.stdout)
 		else:
-			print(result.stdout)
+			#print(result.stdout)
+			hashestowrite.append(result.stdout)
 
+#MeowHash 12B741B3-5929BA8F-6E329A7D-AF4FBB29 jpegs/Gpx-SP-107-2560.jpg
 
-	cmds = generateCommandListCompression(args.tools, args.output, files)
+	print("-Write hashes to file in output path")
+	with open(args.output + "/filehashes.txt", 'w') as f:
+		for item in hashestowrite:
+			itemStr = item.decode('UTF-8')
+			itemStr = itemStr.replace(args.input, "")
+			f.write("%s\n" % itemStr)
+		f.close()
 
+	# TODO: create folderstructure in destination folder
+	for dir in dirs:
+		dir = dir.replace(args.input, "")
+		path = os.path.join(args.output, dir)
+		#print("create folder: %s" % (path))
+		os.makedirs(path, exist_ok=True)
+
+	print("-Generate commands to compress data")
+	cmds = generateCommandListCompression(args.tools, args.output, files, args.input)
+
+	print("-Compress all files")
 	#for cmd in cmds:
 	#	print("cmd: %s" % (cmd))
+	compressresults = []
+	for res in pool.imap_unordered(work, cmds):
+		compressresults.append(res)
 
-	#pool.map(work, cmds)
+	for result in compressresults:
+		if(result.returncode != 0):
+			print("COMPRESSERROR: %s(%d)" % (result.stdout, result.returncode))
 
+	print("-Finished!")

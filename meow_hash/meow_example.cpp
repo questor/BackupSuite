@@ -33,7 +33,7 @@ static void FreeEntireFile(entire_file *File);
 static void
 PrintHash(meow_u128 Hash)
 {
-    printf("%08X-%08X-%08X-%08X\n",
+    printf("%08X-%08X-%08X-%08X",
            MeowU32From(Hash, 3),
            MeowU32From(Hash, 2),
            MeowU32From(Hash, 1),
@@ -51,8 +51,9 @@ HashOneFile(char *FilenameA)
         meow_u128 HashA = MeowHash(MeowDefaultSeed, A.Size, A.Contents);
         
         // NOTE(casey): Print the hash
-        printf("MeowHash \"%s\": ", FilenameA);
+        printf("MeowHash ");
         PrintHash(HashA);
+        printf(" %s", FilenameA);
     }
     
     FreeEntireFile(&A);
