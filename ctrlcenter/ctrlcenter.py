@@ -9,30 +9,70 @@ def runProcess(cmd):
 	result = subprocess.run(cmd, stdout=subprocess.PIPE)
 	return result
 
-uncompressToolPath = ""
-
-def uncompressAndGenerateHash(file):
+def uncompressAndGenerateHash(args):
 	# decompress to temp
+
+	file = args[0]
+	inputpath = args[1][0]
+	toolpath = args[1][1]
+
 	filename, extension = os.path.splitext(file)
 	lowerExt = extension.lower()
 
+	outputfile = filename.replace(inputpath, "")
+	outputfile = os.path.join("/tmp/", outputfile)
+
 	if(lowerExt == '.lepton'):
 		cmd = []
-		cmd.append("%s/lepton" % uncompressToolPath)
+		cmd.append("%s/lepton" % toolpath)
+		cmd.append("-singlethread")
+		cmd.append("-allowprogressive") 
+		cmd.append("%s" % file)					# is already with .lepton!
+		cmd.append("%s" % outputfile)
+		result = subprocess.run(cmd, stdout=subprocess.PIPE)
+		if(result.returncode != 0):
+			return ""
 
 	elif(lowerExt == '.pcf'):
 		cmd = []
-		cmd.append("%s/precomp-cpp" % uncompressToolPath)
+		cmd.append("%s/precomp-cpp" % (toolpath))
+		cmd.append("-r")
+		cmd.append("-lt1")
+		cmd.append("-o%s" % outputfile)
+		cmd.append("%s" % file)
+		result = subprocess.run(cmd, stdout=subprocess.PIPE)
+		if(result.returncode != 0):
+			return ""
 
 	elif(lowerExt == '.zpaq'):
 		cmd = []
-		cmd.append("%s/zpaq715" % uncompressToolPath)
+		cmd.append("%s/zpaq715" % toolpath)
+		cmd.append("x")
+		cmd.append("%s" % file)
+		cmd.append("-to");
+		cmd.append("%s" % outputfile);
+		cmd.append("-t1")
+		result = subprocess.run(cmd, stdout=subprocess.PIPE)
+		if(result.returncode != 0):
+			return ""
 
 	else:
-		return file
+		return ""
 
-	# calculate hash from temp file
-	# delete temp file
+	cmd = []
+	cmd.append("%s/meowhash" % toolpath)
+	cmd.append("%s" % outputfile)
+	cmd.append("--nologo")
+	result = subprocess.run(cmd, stdout=subprocess.PIPE)
+	if(result.returncode != 0):
+		return ""
+
+	os.remove(outputfile)
+
+	ret = result.stdout.decode('UTF-8')
+
+	print(ret)
+	return ret
 
 
 def generateFilelist(path):
@@ -53,7 +93,6 @@ def generateCommandListHashing(toolpath, filelist):
 		cmd.append("%s" % (file))
 		cmd.append("--nologo")
 		cmdlist.append(cmd)
-
 	return cmdlist
 
 def getFilesizes(filelist):
@@ -102,10 +141,10 @@ def generateCommandListCompression(toolpath, outputpath, filelist, inputpath):
 			# TODO: make list of files to be deleted afterwards because they are temporary
 		else:
 			cmd = []
-			cmd.append("%s/zpaq715" % (toolpath))
+			cmd.append("%s/zpaq715" % toolpath)
 			cmd.append("a")
-			cmd.append("%s.zpaq" % (outputfile))
-			cmd.append("%s" % (file))
+			cmd.append("%s.zpaq" % outputfile)
+			cmd.append("%s" % file)
 			cmd.append("-m4")
 			cmd.append("-t1")
 			cmdlist.append(cmd)
@@ -126,17 +165,19 @@ if __name__ == '__main__':
 	print("BackupIt V0.1")
 
 	parser = argparse.ArgumentParser(description="Backup Control Script")
-	parser.add_argument('-i', '--input', help="Folder to Backup FROM", required=True)
-	parser.add_argument('-o', '--output', help="Folder to Backup TO", required=False)
-	parser.add_argument('-t', '--tools', help="Folder to compiled tools", required=True)
-	parser.add_argument('-c', '--create', help="Create compressed Structure from input", required=False)
-	parser.add_argument('-v', '--verify', help="Verify compressed structure", required=False)
+	parser.add_argument('-i', "--input", help="Folder to Backup FROM", required=True)
+	parser.add_argument('-o', "--output", help="Folder to Backup TO", required=False)
+	parser.add_argument('-t', "--tools", help="Folder to compiled tools", required=True)
+	parser.add_argument('-c', "--create", help="Create compressed Structure from input", required=False, action="store_true")
+	parser.add_argument('-v', "--verify", help="Verify compressed structure", required=False, action="store_true")
 	args = parser.parse_args()
 
 	count = multiprocessing.cpu_count()
+	pool = multiprocessing.Pool(processes=count)
 	print("-Number CPUs found: %d" % (count))
 
 	if(args.create):
+		print("-Create archive")
 
 		dirs, files = generateFilelist(args.input)
 		print("-Found %d files" % (len(files)))
@@ -148,8 +189,6 @@ if __name__ == '__main__':
 		cmds = generateCommandListHashing(args.tools, files)
 		
 		print("-Generating the hashes of the files")
-		pool = multiprocessing.Pool(processes=count)
-
 		hashresults = []
 		for res in pool.imap_unordered(runProcess, cmds):
 			hashresults.append(res)
@@ -171,6 +210,7 @@ if __name__ == '__main__':
 				f.write("%s\n" % itemStr)
 			f.close()
 
+		print("-Create folder structure in ouput path")
 		for dir in dirs:
 			dir = dir.replace(args.input, "")
 			path = os.path.join(args.output, dir)
@@ -191,13 +231,37 @@ if __name__ == '__main__':
 	print("-Finished!")
 
 	if(args.verify):
+		print("-Verify archive")
 		dirs, files = generateFilelist(args.input)
-		print("-Found %d files" % len(file))
+		print("-Found %d files" % len(files))
 
-		uncompressToolPath = args.tools
+		print("-Create folder structure in ouput path")
+		for dir in dirs:
+			dir = dir.replace(args.input, "")
+			path = os.path.join("/tmp/", dir)
+			os.makedirs(path, exist_ok=True)
+
+		args = [args.input, args.tools]
+		new_iterable = ([x, args] for x in files)
 
 		verifyResults = []
-		for res in pool.imap_unordered(uncompressAndGenerateHash, files)
+		for res in pool.imap_unordered(uncompressAndGenerateHash, new_iterable):
 			verifyResults.append(res)
 
+		# here in verifyResults the path is still wrong because it's lead by "/tmp/" which need to be removed...
 
+		print(verifyResults)
+
+		# create set of all file hashes
+		originalHashes = {}
+		with open(args.input + "/filehashes.txt", 'r') as f:
+			for line in f:
+				hashfunc, hashvalue, path = line.split()
+				originalHashes[hashvalue] = path
+
+# precomp seems to be asking something? maybe overwrite confirmation?
+
+# ['', '', '', '', '', '', '', '', '', '', 'MeowHash 81A3D9CD-4D2C35FB-80C05C01-05D3820E /tmp/pngs/pixelwp2.png', 'MeowHash F45ADA0A-8D929581-2CB3949F-2D2C3C21 /tmp/pngs/pixelwp16.png', 'MeowHash 0F09791B-46556AF7-7893EDFC-2D3024AB /tmp/pngs
+
+#if word in words:
+#	print word

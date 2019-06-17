@@ -1,6 +1,8 @@
 // zpaq.cpp - Journaling incremental deduplicating archiver
 
-#define ZPAQ_VERSION "7.15"
+#define ZPAQ_VERSION "7.15-questor01"
+//special modified version to be able to decompress into folder structure without input path structure!
+
 /*
   This software is provided as-is, with no warranty.
   I, Matt Mahoney, release this software into
@@ -1148,9 +1150,11 @@ string append_path(string a, string b) {
 
 // Rename name using tofiles[]
 string Jidac::rename(string name) {
-  if (files.size()==0 && tofiles.size()>0)  // append prefix tofiles[0]
-    name=append_path(tofiles[0], name);
-  else {  // replace prefix files[i] with tofiles[i]
+  printf("rename: %d %d\n", files.size(), tofiles.size());
+  if (files.size()==0 && tofiles.size()>0) { // append prefix tofiles[0]
+    //name=append_path(tofiles[0], name);
+    name = tofiles[0];
+  } else {  // replace prefix files[i] with tofiles[i]
     const int n=name.size();
     for (unsigned i=0; i<files.size() && i<tofiles.size(); ++i) {
       const int fn=files[i].size();
