@@ -1239,7 +1239,7 @@ int init(int argc, char* argv[]) {
       read_header();
     }
 
-    if (file_exists(output_file_name)) {
+/*    if (file_exists(output_file_name)) {
       printf("Output file \"%s\" exists. Overwrite (y/n)? ", output_file_name);
       char ch = get_char_with_echo();
       if ((ch != 'Y') && (ch != 'y')) {
@@ -1252,7 +1252,7 @@ int init(int argc, char* argv[]) {
         printf("\n");
         #endif
       }
-    }
+    }*/
     fout = fopen(output_file_name,"wb");
     if (fout == NULL) {
       printf("ERROR: Can't create output file \"%s\"\n", output_file_name);

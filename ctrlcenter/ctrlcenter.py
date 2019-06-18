@@ -6,7 +6,7 @@ import argparse
 import logging
 
 def runProcess(cmd):
-	result = subprocess.run(cmd, stdout=subprocess.PIPE)
+	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
 	return result
 
 def uncompressAndGenerateHash(args):
@@ -22,6 +22,8 @@ def uncompressAndGenerateHash(args):
 	outputfile = filename.replace(inputpath, "")
 	outputfile = os.path.join("/tmp/", outputfile)
 
+	print("uncompressing %s to tmp" % filename)
+
 	if(lowerExt == '.lepton'):
 		cmd = []
 		cmd.append("%s/lepton" % toolpath)
@@ -29,10 +31,6 @@ def uncompressAndGenerateHash(args):
 		cmd.append("-allowprogressive") 
 		cmd.append("%s" % file)					# is already with .lepton!
 		cmd.append("%s" % outputfile)
-		result = subprocess.run(cmd, stdout=subprocess.PIPE)
-		if(result.returncode != 0):
-			return ""
-
 	elif(lowerExt == '.pcf'):
 		cmd = []
 		cmd.append("%s/precomp-cpp" % (toolpath))
@@ -40,10 +38,6 @@ def uncompressAndGenerateHash(args):
 		cmd.append("-lt1")
 		cmd.append("-o%s" % outputfile)
 		cmd.append("%s" % file)
-		result = subprocess.run(cmd, stdout=subprocess.PIPE)
-		if(result.returncode != 0):
-			return ""
-
 	elif(lowerExt == '.zpaq'):
 		cmd = []
 		cmd.append("%s/zpaq715" % toolpath)
@@ -52,28 +46,28 @@ def uncompressAndGenerateHash(args):
 		cmd.append("-to");
 		cmd.append("%s" % outputfile);
 		cmd.append("-t1")
-		result = subprocess.run(cmd, stdout=subprocess.PIPE)
-		if(result.returncode != 0):
-			return ""
-
 	else:
+		print("VERIFY ERROR(1): %s (%s)" % (file, lowerExt))
+		return ""
+
+	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
+	if(result.returncode != 0):
+		print("VERIFY ERROR(2): %s" % file)
 		return ""
 
 	cmd = []
 	cmd.append("%s/meowhash" % toolpath)
 	cmd.append("%s" % outputfile)
 	cmd.append("--nologo")
-	result = subprocess.run(cmd, stdout=subprocess.PIPE)
+	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
 	if(result.returncode != 0):
+		print("VERIFY ERROR(3): %s" % file)
 		return ""
 
 	os.remove(outputfile)
 
 	ret = result.stdout.decode('UTF-8')
-
-	print(ret)
 	return ret
-
 
 def generateFilelist(path):
 	retDirs = []
@@ -233,6 +227,9 @@ if __name__ == '__main__':
 	if(args.verify):
 		print("-Verify archive")
 		dirs, files = generateFilelist(args.input)
+
+		files.remove(args.input + "filehashes.txt")			# TODO: works on windows?
+
 		print("-Found %d files" % len(files))
 
 		print("-Create folder structure in ouput path")
@@ -241,27 +238,52 @@ if __name__ == '__main__':
 			path = os.path.join("/tmp/", dir)
 			os.makedirs(path, exist_ok=True)
 
-		args = [args.input, args.tools]
-		new_iterable = ([x, args] for x in files)
+		verifyargs = [args.input, args.tools]
+		new_iterable = ([x, verifyargs] for x in files)
+
+		rawVerifyResults = []
+		for res in pool.imap_unordered(uncompressAndGenerateHash, new_iterable):
+			rawVerifyResults.append(res)
 
 		verifyResults = []
-		for res in pool.imap_unordered(uncompressAndGenerateHash, new_iterable):
-			verifyResults.append(res)
+		for item in rawVerifyResults:
+			verifyResults.append(item.replace("/tmp/", ""))
 
 		# here in verifyResults the path is still wrong because it's lead by "/tmp/" which need to be removed...
 
-		print(verifyResults)
-
 		# create set of all file hashes
 		originalHashes = {}
+		allOK = True
+		notFoundFiles = []
 		with open(args.input + "/filehashes.txt", 'r') as f:
 			for line in f:
-				hashfunc, hashvalue, path = line.split()
-				originalHashes[hashvalue] = path
+				filehashfunc, space, rest = line.partition(' ')
+				filehashvalue, space, filepath = rest.partition(' ')
 
-# precomp seems to be asking something? maybe overwrite confirmation?
+				# search for file and hash in verify-set
 
-# ['', '', '', '', '', '', '', '', '', '', 'MeowHash 81A3D9CD-4D2C35FB-80C05C01-05D3820E /tmp/pngs/pixelwp2.png', 'MeowHash F45ADA0A-8D929581-2CB3949F-2D2C3C21 /tmp/pngs/pixelwp16.png', 'MeowHash 0F09791B-46556AF7-7893EDFC-2D3024AB /tmp/pngs
+				filepath = filepath.strip()
 
-#if word in words:
-#	print word
+				origFile = [x for x in verifyResults if x.endswith(filepath)]
+
+				if(len(origFile) == 1):
+					origFile = str(origFile)
+					if filehashvalue not in origFile:
+						print("%s: HASH HAS CHANGED!(%s,%s)" % (filepath, origFile, filehashvalue))
+						allOK = False
+				else:
+					notFoundFiles.append(filepath)
+					allOK = False
+
+		# TODO: how to find files which are present on disc, but not in the filehashes-file?
+		# files in filehashes but not found on disk are handled
+
+		if(allOK == False):
+			print("\n\n")
+			print(" !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+			print("! There were errors during verification !")
+			print(" !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n")
+			print("The following files are present in the filehashes-file, but are not found on disk:")
+			print(*notFoundFiles, sep="\n")
+		else:
+			print("Verification: all hashes in the file found on disc and are equal")
