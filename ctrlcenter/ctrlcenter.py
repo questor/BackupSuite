@@ -3,8 +3,6 @@ import subprocess
 import os
 import argparse
 
-import logging
-
 from colorama import init, Fore, Back, Style
 
 def runProcess(cmd):
@@ -49,12 +47,12 @@ def uncompressAndGenerateHash(args):
 		cmd.append("%s" % outputfile);
 		cmd.append("-t1")
 	else:
-		print(Fore.RED + "VERIFY ERROR(1): %s (%s)" + Style.RESET_ALL % (file, lowerExt))
+		print((Fore.RED + "VERIFY ERROR(1): %s (%s)" + Style.RESET_ALL) % (file, lowerExt))
 		return ""
 
 	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
 	if(result.returncode != 0):
-		print(Fore.RED + "VERIFY ERROR(2): %s" + Style.RESET_ALL % file)
+		print((Fore.RED + "VERIFY ERROR(2): %s" + Style.RESET_ALL) % file)
 		return ""
 
 	cmd = []
@@ -63,7 +61,7 @@ def uncompressAndGenerateHash(args):
 	cmd.append("--nologo")
 	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
 	if(result.returncode != 0):
-		print(Fore.RED + "VERIFY ERROR(3): %s" + Style.RESET_ALL % file)
+		print((Fore.RED + "VERIFY ERROR(3): %s" + Style.RESET_ALL) % file)
 		return ""
 
 	os.remove(outputfile)
@@ -155,9 +153,45 @@ def generateCommandListCompression(toolpath, outputpath, filelist, inputpath):
 			
 	return cmdlist
 
-if __name__ == '__main__':
-	#logging.basicConfig(level=logging.INFO)
+def mergeFilehashesToDatabase(databasepath, inputpath):
+	database = []
+	if(os.path.isfile(databasepath)):
+		print(Fore.BLUE + "-Reading database" + Style.RESET_ALL)
+		with open(databasepath, 'r') as f:
+			for line in f:
+				filehashfunc, space, rest = line.partition(' ')
+				filehashvalue, space, filepath = rest.partition(' ')
+				filepath = filepath.strip()
+				database.append([filehashfunc, filehashvalue, filepath])
+	else:
+		print(Fore.BLUE + "-No database found, creating a new one" + Style.RESET_ALL)
 
+	print(Fore.BLUE + "-Read filehashes and merge" + Style.RESET_ALL)
+	with open(inputpath + "/filehashes.txt", 'r') as f:
+		for line in f:
+			filehashfunc, space, rest = line.partition(' ')
+			filehashvalue, space, filepath = rest.partition(' ')
+			filepath = filepath.strip()
+
+			found = False
+			for idx, sublist in enumerate(database):
+				if sublist[2] == filepath:
+					found = True
+					database[idx][1] = filehashvalue			# blindly overwrite
+					break
+
+			if not found:
+				database.append([filehashfunc, filehashvalue, filepath])
+
+	print(Fore.BLUE + "-Write database" + Style.RESET_ALL)
+	with open(databasepath, 'w') as f:
+		for item in database:
+			itemStr = item[0] + " " + item[1] + " " + item[2]
+			f.write("%s\n" % itemStr)
+		f.close()
+
+
+if __name__ == '__main__':
 	init()			#init colorama
 
 	print(Style.RESET_ALL + Fore.GREEN + "BackupIt V0.1" + Style.RESET_ALL)
@@ -165,23 +199,33 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description="Backup Control Script")
 	parser.add_argument('-i', "--input", help="Folder to Backup FROM", required=True)
 	parser.add_argument('-o', "--output", help="Folder to Backup TO", required=False)
-	parser.add_argument('-t', "--tools", help="Folder to compiled tools", required=True)
+	parser.add_argument('-t', "--tools", help="Folder to compiled tools", required=False)
+	parser.add_argument('-d', "--database", help="Database-File to Use", required=False)
 	parser.add_argument('-c', "--create", help="Create compressed Structure from input", required=False, action="store_true")
 	parser.add_argument('-v', "--verify", help="Verify compressed structure", required=False, action="store_true")
+	parser.add_argument('-m', "--merge", help="Merge hashfile to database", required=False, action="store_true")
 	args = parser.parse_args()
 
 	count = multiprocessing.cpu_count()
 	pool = multiprocessing.Pool(processes=count)
-	print(Fore.BLUE + "-Number CPUs found: %d" + Style.RESET_ALL % (count))
+	print((Fore.BLUE + "-Number CPUs found: %d" + Style.RESET_ALL) % (count))
+
+	if(args.merge):
+		if args.database is None:
+			print(Fore.RED + "no database file specified!"+Style.RESET_ALL)
+			return
+		print(Fore.GREEN + "-Merge hashlist to database"+ Style.RESET_ALL)
+		mergeFilehashesToDatabase(args.database, args.input)
+
 
 	if(args.create):
 		print(Fore.GREEN + "-Create archive" + Style.RESET_ALL)
 
 		dirs, files = generateFilelist(args.input)
-		print(Fore.BLUE + "-Found %d files" + Style.RESET_ALL % (len(files)))
+		print((Fore.BLUE + "-Found %d files" + Style.RESET_ALL) % (len(files)))
 
-		#filesizesUncompressed = getFilesizes(files)
-		#print("-All filesizes uncompressed: %dMB(%d)" % (filesizesUncompressed/(1024*1024), filesizesUncompressed))
+		filesizesUncompressed = getFilesizes(files)
+		print((Fore.BLUE + "-All filesizes uncompressed: %dMB(%d)" + Style.RESET_ALL) % (filesizesUncompressed/(1024*1024), filesizesUncompressed))
 
 		print(Fore.BLUE + "-Generate hashing commands" + Style.RESET_ALL)
 		cmds = generateCommandListHashing(args.tools, files)
@@ -198,12 +242,33 @@ if __name__ == '__main__':
 				print(Fore.RED + "HASHERROR: %s(%d)" + Style.RESET_ALL % (result.stdout, result.returncode))
 				errorfiles.append(result.stdout)
 			else:
-				hashestowrite.append(result.stdout)
+				hashestowrite.append(result.stdout.decode('UTF-8'))
+
+		database = []
+		if args.database is not None:
+			if os.path.isfile(args.database):
+				print(Fore.BLUE + "-Reading database" + Style.RESET_ALL)
+				with open(args.database, 'r') as f:
+					for line in f:
+						filehashfunc, space, rest = line.partition(' ')
+						filehashvalue, space, filepath = rest.partition(' ')
+						filepath = filepath.strip()
+						database.append([filehashfunc, filehashvalue, filepath])
+
+				print(Fore.BLUE + "-Search for updates of files (incremental update mode)" + Style.RESET_ALL)
+
+				for item in hashestowrite:
+					# arg, here we have to modify files and hashtowrite! ugly!
+				#TODO!
+
+			else:
+				print(Fore.BLUE + "-No database found, creating a new one" + Style.RESET_ALL)
+		else:
+			print(Fore.BLUE + "-No database file specified, will not create a new one" + Style.RESET_ALL)
 
 		print(Fore.BLUE + "-Write hashes to file in output path" + Style.RESET_ALL)
 		with open(args.output + "/filehashes.txt", 'w') as f:
-			for item in hashestowrite:
-				itemStr = item.decode('UTF-8')
+			for itemStr in hashestowrite:
 				itemStr = itemStr.replace(args.input, "")
 				f.write("%s\n" % itemStr)
 			f.close()
@@ -224,7 +289,7 @@ if __name__ == '__main__':
 
 		for result in compressresults:
 			if(result.returncode != 0):
-				print(Fore.RED + "COMPRESSERROR: %s(%d)" + Style.RESET_ALL % (result.stdout, result.returncode))
+				print((Fore.RED + "COMPRESSERROR: %s(%d)" + Style.RESET_ALL) % (result.stdout, result.returncode))
 
 		print(Fore.GREEN + "-Finished!" + Style.RESET_ALL)
 
@@ -234,7 +299,7 @@ if __name__ == '__main__':
 
 		files.remove(args.input + "filehashes.txt")			# TODO: works on windows?
 
-		print(Fore.BLUE + "-Found %d files" + Style.RESET_ALL % len(files))
+		print((Fore.BLUE + "-Found %d files" + Style.RESET_ALL) % len(files))
 
 		print(Fore.BLUE + "-Create folder structure in ouput path" + Style.RESET_ALL)
 		for dir in dirs:
@@ -273,7 +338,7 @@ if __name__ == '__main__':
 				if(len(origFile) == 1):
 					origFile = str(origFile)
 					if filehashvalue not in origFile:
-						print(Fore.RED + "%s: HASH HAS CHANGED!(%s,%s)" + Style.RESET_ALL % (filepath, origFile, filehashvalue))
+						print((Fore.RED + "%s: HASH HAS CHANGED!(%s,%s)" + Style.RESET_ALL) % (filepath, origFile, filehashvalue))
 						allOK = False
 				else:
 					notFoundFiles.append(filepath)
@@ -292,5 +357,3 @@ if __name__ == '__main__':
 			print(Style.RESET_ALL)
 		else:
 			print(Fore.GREEN + "Verification: all hashes in the file found on disc and are equal" + Style.RESET_ALL)
-	
-	deinit()		# shutdown colorama
