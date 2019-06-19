@@ -5,6 +5,8 @@ import argparse
 
 import logging
 
+from colorama import init, Fore, Back, Style
+
 def runProcess(cmd):
 	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
 	return result
@@ -47,12 +49,12 @@ def uncompressAndGenerateHash(args):
 		cmd.append("%s" % outputfile);
 		cmd.append("-t1")
 	else:
-		print("VERIFY ERROR(1): %s (%s)" % (file, lowerExt))
+		print(Fore.RED + "VERIFY ERROR(1): %s (%s)" + Style.RESET_ALL % (file, lowerExt))
 		return ""
 
 	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
 	if(result.returncode != 0):
-		print("VERIFY ERROR(2): %s" % file)
+		print(Fore.RED + "VERIFY ERROR(2): %s" + Style.RESET_ALL % file)
 		return ""
 
 	cmd = []
@@ -61,7 +63,7 @@ def uncompressAndGenerateHash(args):
 	cmd.append("--nologo")
 	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
 	if(result.returncode != 0):
-		print("VERIFY ERROR(3): %s" % file)
+		print(Fore.RED + "VERIFY ERROR(3): %s" + Style.RESET_ALL % file)
 		return ""
 
 	os.remove(outputfile)
@@ -156,7 +158,9 @@ def generateCommandListCompression(toolpath, outputpath, filelist, inputpath):
 if __name__ == '__main__':
 	#logging.basicConfig(level=logging.INFO)
 
-	print("BackupIt V0.1")
+	init()			#init colorama
+
+	print(Style.RESET_ALL + Fore.GREEN + "BackupIt V0.1" + Style.RESET_ALL)
 
 	parser = argparse.ArgumentParser(description="Backup Control Script")
 	parser.add_argument('-i', "--input", help="Folder to Backup FROM", required=True)
@@ -168,21 +172,21 @@ if __name__ == '__main__':
 
 	count = multiprocessing.cpu_count()
 	pool = multiprocessing.Pool(processes=count)
-	print("-Number CPUs found: %d" % (count))
+	print(Fore.BLUE + "-Number CPUs found: %d" + Style.RESET_ALL % (count))
 
 	if(args.create):
-		print("-Create archive")
+		print(Fore.GREEN + "-Create archive" + Style.RESET_ALL)
 
 		dirs, files = generateFilelist(args.input)
-		print("-Found %d files" % (len(files)))
+		print(Fore.BLUE + "-Found %d files" + Style.RESET_ALL % (len(files)))
 
 		#filesizesUncompressed = getFilesizes(files)
 		#print("-All filesizes uncompressed: %dMB(%d)" % (filesizesUncompressed/(1024*1024), filesizesUncompressed))
 
-		print("-Generate hashing commands")
+		print(Fore.BLUE + "-Generate hashing commands" + Style.RESET_ALL)
 		cmds = generateCommandListHashing(args.tools, files)
 		
-		print("-Generating the hashes of the files")
+		print(Fore.BLUE + "-Generating the hashes of the files" + Style.RESET_ALL)
 		hashresults = []
 		for res in pool.imap_unordered(runProcess, cmds):
 			hashresults.append(res)
@@ -191,12 +195,12 @@ if __name__ == '__main__':
 		hashestowrite = []
 		for result in hashresults:
 			if(result.returncode != 0):
-				print("HASHERROR: %s(%d)" % (result.stdout, result.returncode))
+				print(Fore.RED + "HASHERROR: %s(%d)" + Style.RESET_ALL % (result.stdout, result.returncode))
 				errorfiles.append(result.stdout)
 			else:
 				hashestowrite.append(result.stdout)
 
-		print("-Write hashes to file in output path")
+		print(Fore.BLUE + "-Write hashes to file in output path" + Style.RESET_ALL)
 		with open(args.output + "/filehashes.txt", 'w') as f:
 			for item in hashestowrite:
 				itemStr = item.decode('UTF-8')
@@ -204,35 +208,35 @@ if __name__ == '__main__':
 				f.write("%s\n" % itemStr)
 			f.close()
 
-		print("-Create folder structure in ouput path")
+		print(Fore.BLUE + "-Create folder structure in ouput path" + Style.RESET_ALL)
 		for dir in dirs:
 			dir = dir.replace(args.input, "")
 			path = os.path.join(args.output, dir)
 			os.makedirs(path, exist_ok=True)
 
-		print("-Generate commands to compress data")
+		print(Fore.BLUE + "-Generate commands to compress data" + Style.RESET_ALL)
 		cmds = generateCommandListCompression(args.tools, args.output, files, args.input)
 
-		print("-Compress all files")
+		print(Fore.BLUE + "-Compress all files" + Style.RESET_ALL)
 		compressresults = []
 		for res in pool.imap_unordered(runProcess, cmds):
 			compressresults.append(res)
 
 		for result in compressresults:
 			if(result.returncode != 0):
-				print("COMPRESSERROR: %s(%d)" % (result.stdout, result.returncode))
+				print(Fore.RED + "COMPRESSERROR: %s(%d)" + Style.RESET_ALL % (result.stdout, result.returncode))
 
-	print("-Finished!")
+		print(Fore.GREEN + "-Finished!" + Style.RESET_ALL)
 
 	if(args.verify):
-		print("-Verify archive")
+		print(Fore.GREEN + "-Verify archive" + Style.RESET_ALL)
 		dirs, files = generateFilelist(args.input)
 
 		files.remove(args.input + "filehashes.txt")			# TODO: works on windows?
 
-		print("-Found %d files" % len(files))
+		print(Fore.BLUE + "-Found %d files" + Style.RESET_ALL % len(files))
 
-		print("-Create folder structure in ouput path")
+		print(Fore.BLUE + "-Create folder structure in ouput path" + Style.RESET_ALL)
 		for dir in dirs:
 			dir = dir.replace(args.input, "")
 			path = os.path.join("/tmp/", dir)
@@ -269,7 +273,7 @@ if __name__ == '__main__':
 				if(len(origFile) == 1):
 					origFile = str(origFile)
 					if filehashvalue not in origFile:
-						print("%s: HASH HAS CHANGED!(%s,%s)" % (filepath, origFile, filehashvalue))
+						print(Fore.RED + "%s: HASH HAS CHANGED!(%s,%s)" + Style.RESET_ALL % (filepath, origFile, filehashvalue))
 						allOK = False
 				else:
 					notFoundFiles.append(filepath)
@@ -279,11 +283,14 @@ if __name__ == '__main__':
 		# files in filehashes but not found on disk are handled
 
 		if(allOK == False):
-			print("\n\n")
+			print(Fore.RED + "\n\n")
 			print(" !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 			print("! There were errors during verification !")
 			print(" !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n")
 			print("The following files are present in the filehashes-file, but are not found on disk:")
 			print(*notFoundFiles, sep="\n")
+			print(Style.RESET_ALL)
 		else:
-			print("Verification: all hashes in the file found on disc and are equal")
+			print(Fore.GREEN + "Verification: all hashes in the file found on disc and are equal" + Style.RESET_ALL)
+	
+	deinit()		# shutdown colorama
