@@ -2,8 +2,9 @@ import multiprocessing
 import subprocess
 import os
 import argparse
+import tempfile
 
-from colorama import init, Fore, Back, Style
+from colorama import init, deinit, Fore, Back, Style
 
 def runProcess(cmd):
 	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
@@ -206,6 +207,8 @@ if __name__ == '__main__':
 	parser.add_argument('-m', "--merge", help="Merge hashfile to database", required=False, action="store_true")
 	args = parser.parse_args()
 
+	temporaryPath = tempfile.gettempdir()
+
 	count = multiprocessing.cpu_count()
 	pool = multiprocessing.Pool(processes=count)
 	print((Fore.BLUE + "-Number CPUs found: %d" + Style.RESET_ALL) % (count))
@@ -357,3 +360,5 @@ if __name__ == '__main__':
 			print(Style.RESET_ALL)
 		else:
 			print(Fore.GREEN + "Verification: all hashes in the file found on disc and are equal" + Style.RESET_ALL)
+	
+	deinit()
