@@ -25,11 +25,11 @@ local common = {
       -- GT enable fibersafe optimizations
       -- MD multithreaded DLL (without debug)
       -- Zf faster PDB generation
-      {Config="*-msvc-release"; "/Zi", "/DEBUG:full", "/O1", "/Oi", "/Oy", "/QIfist", "/Qpar", "/fp:fast", "/Gy", "/Gw", "/Gr", "/GL", "/c", "/GS-", "/GR-", "/GF", "/GT", "/MD", "/Zf"},
+      {Config="*-msvc-release"; "/Zi", "/DEBUG:full", "/O1", "/Oi", "/Oy", "/Qpar", "/fp:fast", "/Gy", "/Gw", "/Gr", "/GL", "/c", "/GS-", "/GR-", "/GF", "/GT", "/MD", "/Zf"},
     },
     CCOPTS = {
       {Config="*-msvc-*"; "/FS" },
-      {Config="*-msvc-release"; "/Zi", "/DEBUG:full", "/O1", "/Oi", "/Oy", "/QIfist", "/Qpar", "/fp:fast", "/Gy", "/Gw", "/Gr", "/GL", "/c", "/GS-", "/GR-", "/GF", "/GT", "/MD", "/Zf"},
+      {Config="*-msvc-release"; "/Zi", "/DEBUG:full", "/O1", "/Oi", "/Oy", "/Qpar", "/fp:fast", "/Gy", "/Gw", "/Gr", "/GL", "/c", "/GS-", "/GR-", "/GF", "/GT", "/MD", "/Zf"},
     },
     PROGOPTS = {
       -- LTCG link time code generation

@@ -220,7 +220,7 @@ Program {
     },
     CXXOPTS = {
       {Config="*-clang-*"; "-mssse3", "-msse4.2", "-march=core-avx2", "-std=c++11",  "-fno-exceptions",  "-fno-rtti", "-O3"},
-      {Config="*-msvc-*"; "-D_HAS_EXCEPTIONS=0", "-GR-", "/arch:SSE2", "arch:AVX2", "-D__SSE2__"},
+      {Config="*-msvc-*"; "-D_HAS_EXCEPTIONS=0", "-GR-", "/arch:SSE2", "/arch:AVX2", "-D__SSE2__"},
     },
 
     CPPPATH = {
@@ -307,7 +307,7 @@ Program {
       "zpaq715",
     },
   },
-  Libs = {Config="win32-*-*"; "Comdlg32.lib", "Ole32.lib" },
+  Libs = {Config="win32-*-*"; "Comdlg32.lib", "Ole32.lib", "Advapi32.lib"},
   Depends = {
        "defaultConfiguration"
   },
