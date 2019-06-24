@@ -260,8 +260,27 @@ if __name__ == '__main__':
 
 				print(Fore.BLUE + "-Search for updates of files (incremental update mode)" + Style.RESET_ALL)
 
+				filelistToProcess = []
 				for item in hashestowrite:
-					# arg, here we have to modify files and hashtowrite! ugly!
+
+					filehashfunc, space, rest = item.partition(' ')
+					filehashvalue, space, filepath = item.partition(' ')
+					filepath = filepath.strip()
+
+					found = False
+					for idx, sublist in enumerate(database):
+						if sublist[2] == filepath:
+							found = True
+							if(database[idx][1] != filehashvalue):
+								filelistToProcess.append(item)
+								database[idx][1] = filehashvalue			# update database to have new hash
+							break
+
+					if not found:
+						database.append([filehashfunc, filehashvalue, filepath])
+						filelistToProcess.append(item)
+
+				hashestowrite = filelistToProcess
 				#TODO!
 
 			else:
@@ -293,6 +312,8 @@ if __name__ == '__main__':
 		for result in compressresults:
 			if(result.returncode != 0):
 				print((Fore.RED + "COMPRESSERROR: %s(%d)" + Style.RESET_ALL) % (result.stdout, result.returncode))
+
+		# TODO: write new database with updated and new hash values
 
 		print(Fore.GREEN + "-Finished!" + Style.RESET_ALL)
 
