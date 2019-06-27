@@ -1,10 +1,20 @@
+
+# TODOs:
+# - normalize filenames with paths to make windows/linux 
+# - print statistics at the end of the run
+
 import multiprocessing
 import subprocess
 import os
+#import re
 import argparse
 import tempfile
 
 from colorama import init, deinit, Fore, Back, Style
+
+def normalizePath(path):
+#	return os.path.normpath(os.sep.join(re.split(r'\\|/', path)))
+	return path.replace("\\", "/")
 
 def runProcess(cmd):
 	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
@@ -195,7 +205,7 @@ def mergeFilehashesToDatabase(databasepath, inputpath):
 if __name__ == '__main__':
 	init()			#init colorama
 
-	print(Style.RESET_ALL + Fore.GREEN + "BackupIt V0.1" + Style.RESET_ALL)
+	print(Style.RESET_ALL + Fore.GREEN + "BackupIt V0.9" + Style.RESET_ALL)
 
 	parser = argparse.ArgumentParser(description="Backup Control Script")
 	parser.add_argument('-i', "--input", help="Folder to Backup FROM", required=True)
@@ -208,6 +218,8 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 
 	temporaryPath = tempfile.gettempdir()
+
+	statistics = {}
 
 	count = multiprocessing.cpu_count()
 	pool = multiprocessing.Pool(processes=count)
@@ -228,7 +240,8 @@ if __name__ == '__main__':
 		print((Fore.BLUE + "-Found %d files" + Style.RESET_ALL) % (len(files)))
 
 		filesizesUncompressed = getFilesizes(files)
-		print((Fore.BLUE + "-All filesizes uncompressed: %dMB(%d)" + Style.RESET_ALL) % (filesizesUncompressed/(1024*1024), filesizesUncompressed))
+		statistics['uncompressed'] = filesizesUncompressed
+		print((Fore.BLUE + "-All filesizes uncompressed: %dMB(%dbytes)" + Style.RESET_ALL) % (statistics['uncompressed']/(1024*1024), statistics['uncompressed']))
 
 		print(Fore.BLUE + "-Generate hashing commands" + Style.RESET_ALL)
 		cmds = generateCommandListHashing(args.tools, files)
@@ -248,6 +261,7 @@ if __name__ == '__main__':
 				hashestowrite.append(result.stdout.decode('UTF-8'))
 
 		database = []
+		statistics['databaseImported'] = 0
 		if args.database is not None:
 			if os.path.isfile(args.database):
 				print(Fore.BLUE + "-Reading database" + Style.RESET_ALL)
@@ -257,6 +271,9 @@ if __name__ == '__main__':
 						filehashvalue, space, filepath = rest.partition(' ')
 						filepath = filepath.strip()
 						database.append([filehashfunc, filehashvalue, filepath])
+
+				print((Fore.BLUE + "-%d entries imported from old database" + Style.RESET_ALL) % len(database))
+				statistics['databaseImported'] = len(database)
 
 				print(Fore.BLUE + "-Search for updates of files (incremental update mode)" + Style.RESET_ALL)
 
@@ -301,6 +318,8 @@ if __name__ == '__main__':
 		else:
 			print(Fore.BLUE + "-No database file specified, will not create a new one" + Style.RESET_ALL)
 
+		statistics['filesToProcess'] = len(hashestowrite)
+
 		print(Fore.BLUE + "-Write hashes to file in output path" + Style.RESET_ALL)
 		with open(args.output + "/filehashes.txt", 'w') as f:
 			for itemStr in hashestowrite:
@@ -336,6 +355,8 @@ if __name__ == '__main__':
 		else:
 			print(Fore.BLUE + "-No database path specified, will not write db" + Style.RESET_ALL)
 
+		print(Fore.BLUE + "################################################" + Style.RESET_ALL)
+		print((Fore.BLUE + "-All filesizes uncompressed: %dMB(%dbytes)" + Style.RESET_ALL) % (statistics['uncompressed']/(1024*1024), statistics['uncompressed']))
 
 		print(Fore.GREEN + "-Finished!" + Style.RESET_ALL)
 
