@@ -216,7 +216,7 @@ if __name__ == '__main__':
 	if(args.merge):
 		if args.database is None:
 			print(Fore.RED + "no database file specified!"+Style.RESET_ALL)
-			return
+			exit(1)
 		print(Fore.GREEN + "-Merge hashlist to database"+ Style.RESET_ALL)
 		mergeFilehashesToDatabase(args.database, args.input)
 
@@ -264,7 +264,7 @@ if __name__ == '__main__':
 				for item in hashestowrite:
 
 					filehashfunc, space, rest = item.partition(' ')
-					filehashvalue, space, filepath = item.partition(' ')
+					filehashvalue, space, filepath = rest.partition(' ')
 					filepath = filepath.strip()
 
 					found = False
@@ -274,17 +274,30 @@ if __name__ == '__main__':
 							if(database[idx][1] != filehashvalue):
 								filelistToProcess.append(item)
 								database[idx][1] = filehashvalue			# update database to have new hash
+								print(Fore.GREEN + "IncrementalMode: filehash changed, process file %s" % filepath)
+							else:
+								print(Fore.GREEN + "IncrementalMode: unchanged, skip file %s" % filepath)
 							break
 
 					if not found:
+						print(Fore.GREEN + "IncrementalMode: new file %s" % filepath)
 						database.append([filehashfunc, filehashvalue, filepath])
 						filelistToProcess.append(item)
 
 				hashestowrite = filelistToProcess
-				#TODO!
+
+				if len(hashestowrite) == 0:
+					print(Fore.GREEN + "-IncrementalMode: found nothing to do, all files unchanged. exiting")
+					exit(0)
 
 			else:
 				print(Fore.BLUE + "-No database found, creating a new one" + Style.RESET_ALL)
+				for item in hashestowrite:
+					filehashfunc, space, rest = item.partition(' ')
+					filehashvalue, space, filepath = rest.partition(' ')
+					filepath = filepath.strip()
+
+					database.append([filehashfunc, filehashvalue, filepath])
 		else:
 			print(Fore.BLUE + "-No database file specified, will not create a new one" + Style.RESET_ALL)
 
@@ -313,7 +326,16 @@ if __name__ == '__main__':
 			if(result.returncode != 0):
 				print((Fore.RED + "COMPRESSERROR: %s(%d)" + Style.RESET_ALL) % (result.stdout, result.returncode))
 
-		# TODO: write new database with updated and new hash values
+		if args.database is not None:
+			print(Fore.BLUE + "-Write database" + Style.RESET_ALL)
+			with open(args.database, 'w') as f:
+				for item in database:
+					itemStr = item[0] + " " + item[1] + " " + item[2]
+					f.write("%s\n" % itemStr)
+				f.close()
+		else:
+			print(Fore.BLUE + "-No database path specified, will not write db" + Style.RESET_ALL)
+
 
 		print(Fore.GREEN + "-Finished!" + Style.RESET_ALL)
 
