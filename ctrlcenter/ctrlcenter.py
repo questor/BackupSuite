@@ -1,7 +1,6 @@
 
 # TODOs:
 # - normalize filenames with paths to make windows/linux 
-# - print statistics at the end of the run
 
 import multiprocessing
 import subprocess
@@ -9,6 +8,7 @@ import os
 #import re
 import argparse
 import tempfile
+import tqdm
 
 from colorama import init, deinit, Fore, Back, Style
 
@@ -17,7 +17,7 @@ def normalizePath(path):
 	return path.replace("\\", "/")
 
 def runProcess(cmd):
-	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
+	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 	return result
 
 def uncompressAndGenerateHash(args):
@@ -61,7 +61,7 @@ def uncompressAndGenerateHash(args):
 		print((Fore.RED + "VERIFY ERROR(1): %s (%s)" + Style.RESET_ALL) % (file, lowerExt))
 		return ""
 
-	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
+	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 	if(result.returncode != 0):
 		print((Fore.RED + "VERIFY ERROR(2): %s" + Style.RESET_ALL) % file)
 		return ""
@@ -70,7 +70,7 @@ def uncompressAndGenerateHash(args):
 	cmd.append("%s/meowhash" % toolpath)
 	cmd.append("%s" % outputfile)
 	cmd.append("--nologo")
-	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None)
+	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 	if(result.returncode != 0):
 		print((Fore.RED + "VERIFY ERROR(3): %s" + Style.RESET_ALL) % file)
 		return ""
@@ -219,8 +219,6 @@ if __name__ == '__main__':
 
 	temporaryPath = tempfile.gettempdir()
 
-	statistics = {}
-
 	count = multiprocessing.cpu_count()
 	pool = multiprocessing.Pool(processes=count)
 	print((Fore.BLUE + "-Number CPUs found: %d" + Style.RESET_ALL) % (count))
@@ -240,15 +238,14 @@ if __name__ == '__main__':
 		print((Fore.BLUE + "-Found %d files" + Style.RESET_ALL) % (len(files)))
 
 		filesizesUncompressed = getFilesizes(files)
-		statistics['uncompressed'] = filesizesUncompressed
-		print((Fore.BLUE + "-All filesizes uncompressed: %dMB(%dbytes)" + Style.RESET_ALL) % (statistics['uncompressed']/(1024*1024), statistics['uncompressed']))
+		print((Fore.BLUE + "-All filesizes uncompressed: %dMB(%dbytes)" + Style.RESET_ALL) % (filesizesUncompressed/(1024*1024), filesizesUncompressed))
 
 		print(Fore.BLUE + "-Generate hashing commands" + Style.RESET_ALL)
 		cmds = generateCommandListHashing(args.tools, files)
 		
 		print(Fore.BLUE + "-Generating the hashes of the files" + Style.RESET_ALL)
 		hashresults = []
-		for res in pool.imap_unordered(runProcess, cmds):
+		for res in tqdm.tqdm(pool.imap_unordered(runProcess, cmds), total=len(cmds)):
 			hashresults.append(res)
 
 		errorfiles = []
@@ -261,7 +258,6 @@ if __name__ == '__main__':
 				hashestowrite.append(result.stdout.decode('UTF-8'))
 
 		database = []
-		statistics['databaseImported'] = 0
 		if args.database is not None:
 			if os.path.isfile(args.database):
 				print(Fore.BLUE + "-Reading database" + Style.RESET_ALL)
@@ -273,7 +269,6 @@ if __name__ == '__main__':
 						database.append([filehashfunc, filehashvalue, filepath])
 
 				print((Fore.BLUE + "-%d entries imported from old database" + Style.RESET_ALL) % len(database))
-				statistics['databaseImported'] = len(database)
 
 				print(Fore.BLUE + "-Search for updates of files (incremental update mode)" + Style.RESET_ALL)
 
@@ -318,8 +313,6 @@ if __name__ == '__main__':
 		else:
 			print(Fore.BLUE + "-No database file specified, will not create a new one" + Style.RESET_ALL)
 
-		statistics['filesToProcess'] = len(hashestowrite)
-
 		print(Fore.BLUE + "-Write hashes to file in output path" + Style.RESET_ALL)
 		with open(args.output + "/filehashes.txt", 'w') as f:
 			for itemStr in hashestowrite:
@@ -338,7 +331,7 @@ if __name__ == '__main__':
 
 		print(Fore.BLUE + "-Compress all files" + Style.RESET_ALL)
 		compressresults = []
-		for res in pool.imap_unordered(runProcess, cmds):
+		for res in tqdm.tqdm(pool.imap_unordered(runProcess, cmds), total=len(cmds)):
 			compressresults.append(res)
 
 		for result in compressresults:
@@ -354,9 +347,6 @@ if __name__ == '__main__':
 				f.close()
 		else:
 			print(Fore.BLUE + "-No database path specified, will not write db" + Style.RESET_ALL)
-
-		print(Fore.BLUE + "################################################" + Style.RESET_ALL)
-		print((Fore.BLUE + "-All filesizes uncompressed: %dMB(%dbytes)" + Style.RESET_ALL) % (statistics['uncompressed']/(1024*1024), statistics['uncompressed']))
 
 		print(Fore.GREEN + "-Finished!" + Style.RESET_ALL)
 
@@ -378,7 +368,7 @@ if __name__ == '__main__':
 		new_iterable = ([x, verifyargs] for x in files)
 
 		rawVerifyResults = []
-		for res in pool.imap_unordered(uncompressAndGenerateHash, new_iterable):
+		for res in tqdm.tqdm(pool.imap_unordered(uncompressAndGenerateHash, new_iterable), total=len(cmds)):
 			rawVerifyResults.append(res)
 
 		verifyResults = []
