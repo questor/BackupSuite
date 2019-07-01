@@ -1,6 +1,7 @@
 
 # TODOs:
-# - normalize filenames with paths to make windows/linux 
+# - verify doesn't work with incremental backups as not all files in the database
+#   are available on the media
 
 import multiprocessing
 import subprocess
@@ -33,7 +34,7 @@ def uncompressAndGenerateHash(args):
 	outputfile = filename.replace(inputpath, "")
 	outputfile = os.path.join("/tmp/", outputfile)
 
-	print("uncompressing %s to tmp" % filename)
+	#print("uncompressing %s to tmp" % filename)
 
 	if(lowerExt == '.lepton'):
 		cmd = []
@@ -85,9 +86,9 @@ def generateFilelist(path):
 	retFiles = []
 	for root,directories,filenames in os.walk(path):
 		for directory in directories:
-			retDirs.append(os.path.join(root,directory))
+			retDirs.append(normalizePath(os.path.join(root,directory)))
 		for filename in filenames:
-			retFiles.append(os.path.join(root, filename))
+			retFiles.append(normalizePath(os.path.join(root, filename)))
 	return retDirs, retFiles
 
 def generateCommandListHashing(toolpath, filelist):
@@ -205,7 +206,7 @@ def mergeFilehashesToDatabase(databasepath, inputpath):
 if __name__ == '__main__':
 	init()			#init colorama
 
-	print(Style.RESET_ALL + Fore.GREEN + "BackupIt V0.9" + Style.RESET_ALL)
+	print(Style.RESET_ALL + Fore.GREEN + "BackupIt V1.0 BETA" + Style.RESET_ALL)
 
 	parser = argparse.ArgumentParser(description="Backup Control Script")
 	parser.add_argument('-i', "--input", help="Folder to Backup FROM", required=True)
@@ -228,13 +229,13 @@ if __name__ == '__main__':
 			print(Fore.RED + "no database file specified!"+Style.RESET_ALL)
 			exit(1)
 		print(Fore.GREEN + "-Merge hashlist to database"+ Style.RESET_ALL)
-		mergeFilehashesToDatabase(args.database, args.input)
+		mergeFilehashesToDatabase(args.database, normalizePath(args.input))
 
 
 	if(args.create):
 		print(Fore.GREEN + "-Create archive" + Style.RESET_ALL)
 
-		dirs, files = generateFilelist(args.input)
+		dirs, files = generateFilelist(normalizePath(args.input))
 		print((Fore.BLUE + "-Found %d files" + Style.RESET_ALL) % (len(files)))
 
 		filesizesUncompressed = getFilesizes(files)
@@ -316,18 +317,18 @@ if __name__ == '__main__':
 		print(Fore.BLUE + "-Write hashes to file in output path" + Style.RESET_ALL)
 		with open(args.output + "/filehashes.txt", 'w') as f:
 			for itemStr in hashestowrite:
-				itemStr = itemStr.replace(args.input, "")
+				itemStr = itemStr.replace(normalizePath(args.input), "")
 				f.write("%s\n" % itemStr)
 			f.close()
 
 		print(Fore.BLUE + "-Create folder structure in ouput path" + Style.RESET_ALL)
 		for dir in dirs:
-			dir = dir.replace(args.input, "")
+			dir = dir.replace(normalizePath(args.input), "")
 			path = os.path.join(args.output, dir)
 			os.makedirs(path, exist_ok=True)
 
 		print(Fore.BLUE + "-Generate commands to compress data" + Style.RESET_ALL)
-		cmds = generateCommandListCompression(args.tools, args.output, files, args.input)
+		cmds = generateCommandListCompression(args.tools, args.output, files, normalizePath(args.input))
 
 		print(Fore.BLUE + "-Compress all files" + Style.RESET_ALL)
 		compressresults = []
@@ -354,21 +355,22 @@ if __name__ == '__main__':
 		print(Fore.GREEN + "-Verify archive" + Style.RESET_ALL)
 		dirs, files = generateFilelist(args.input)
 
-		files.remove(args.input + "filehashes.txt")			# TODO: works on windows?
+		filehashpath = normalizePath(os.path.join(args.input, "filehashes.txt"))
+		files.remove(filehashpath)
 
 		print((Fore.BLUE + "-Found %d files" + Style.RESET_ALL) % len(files))
 
 		print(Fore.BLUE + "-Create folder structure in ouput path" + Style.RESET_ALL)
 		for dir in dirs:
-			dir = dir.replace(args.input, "")
+			dir = dir.replace(normalizePath(args.input), "")
 			path = os.path.join("/tmp/", dir)
 			os.makedirs(path, exist_ok=True)
 
-		verifyargs = [args.input, args.tools]
+		verifyargs = [normalizePath(args.input), args.tools]
 		new_iterable = ([x, verifyargs] for x in files)
 
 		rawVerifyResults = []
-		for res in tqdm.tqdm(pool.imap_unordered(uncompressAndGenerateHash, new_iterable), total=len(cmds)):
+		for res in tqdm.tqdm(pool.imap_unordered(uncompressAndGenerateHash, new_iterable), total=len(files)):
 			rawVerifyResults.append(res)
 
 		verifyResults = []
