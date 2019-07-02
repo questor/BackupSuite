@@ -122,11 +122,12 @@ unsigned char in[CHUNK];
 unsigned char out[CHUNK];
 
 // name of temporary files
-char metatempfile[18] = "~temp00000000.dat";
-char tempfile0[19] = "~temp000000000.dat";
-char tempfile1[19] = "~temp000000001.dat";
-char tempfile2[19] = "~temp000000002.dat";
-char tempfile3[19] = "~temp000000003.dat";
+char *metatempfile;
+char *tempfile0;
+char *tempfile1;
+char *tempfile2;
+char *tempfile3;
+
 char* tempfilelist;
 int tempfilelist_count = 0;
 int tempfile_instance = 0;
@@ -192,6 +193,7 @@ long long uncompressed_start;
 
 char* input_file_name = NULL;
 char* output_file_name = NULL;
+char* temporary_path_name = NULL;
 
 long long start_time, sec_time;
 long long fin_length;
@@ -1085,6 +1087,18 @@ int init(int argc, char* argv[]) {
             break;
           }
 
+        case 'U':
+          {
+            if (strlen(argv[i]) == 2) {
+              error(ERR_DONT_USE_SPACE);
+            }
+
+            temporary_path_name = new char[strlen(argv[i]) + 5];
+            strcpy(temporary_path_name, argv[i] + 2);
+
+            break;
+          }
+
         case 'M':
           {
             if (!parseSwitch(use_mjpeg, argv[i] + 1, "mjpeg")) {
@@ -1228,6 +1242,8 @@ int init(int argc, char* argv[]) {
       printf("  streams up to recursion depth 2 will be treated intense (3 or higher in\n");
       printf("  this case won't). Using a sensible setting here can save you some time.\n");
     }
+    printf("\n");
+    printf("  u<dir>       Path for temporary files (last folder will be created!\n");
 
     exit(1);
   } else {
@@ -7488,7 +7504,105 @@ long long fileSize64(char* filename) {
   #endif // UNIX
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////
+#include <iostream>
+#include <string>
+#include <sys/stat.h> // stat
+#include <errno.h>    // errno, ENOENT, EEXIST
+#if defined(_WIN32)
+#include <direct.h>   // _mkdir
+#endif
+
+bool isDirExist(const std::string& path) {
+#if defined(_WIN32)
+    struct _stat info;
+    if (_stat(path.c_str(), &info) != 0) {
+        return false;
+    }
+    return (info.st_mode & _S_IFDIR) != 0;
+#else 
+    struct stat info;
+    if (stat(path.c_str(), &info) != 0) {
+        return false;
+    }
+    return (info.st_mode & S_IFDIR) != 0;
+#endif
+}
+
+bool makePath(const std::string& path) {
+#if defined(_WIN32)
+    int ret = _mkdir(path.c_str());
+#else
+    mode_t mode = 0755;
+    int ret = mkdir(path.c_str(), mode);
+#endif
+    if (ret == 0)
+        return true;
+
+    switch (errno) {
+    case ENOENT:
+        // parent didn't exist, try to create it
+        {
+            int pos = path.find_last_of('/');
+            if (pos == std::string::npos)
+#if defined(_WIN32)
+                pos = path.find_last_of('\\');
+            if (pos == std::string::npos)
+#endif
+                return false;
+            if (!makePath( path.substr(0, pos) ))
+                return false;
+        }
+        // now, try to create again
+#if defined(_WIN32)
+        return 0 == _mkdir(path.c_str());
+#else 
+        return 0 == mkdir(path.c_str(), mode);
+#endif
+
+    case EEXIST:
+        // done!
+        return isDirExist(path);
+
+    default:
+        return false;
+    }
+}
+
+
 void init_temp_files() {
+  if(temporary_path_name != NULL) {
+    std::string path(temporary_path_name);
+    if(makePath(path) == false) {
+      printf("could not create destination directory\n");
+      exit(1);
+    }
+
+    metatempfile = new char[strlen(temporary_path_name)+20];
+    tempfile0 = new char[strlen(temporary_path_name)+20];
+    tempfile1 = new char[strlen(temporary_path_name)+20];
+    tempfile2 = new char[strlen(temporary_path_name)+20];
+    tempfile3 = new char[strlen(temporary_path_name)+20];
+    sprintf(metatempfile, "%s/~temp00000000.dat", temporary_path_name);
+    sprintf(tempfile0,    "%s/~temp000000000.dat", temporary_path_name);
+    sprintf(tempfile1,    "%s/~temp000000001.dat", temporary_path_name);
+    sprintf(tempfile2,    "%s/~temp000000002.dat", temporary_path_name);
+    sprintf(tempfile3,    "%s/~temp000000003.dat", temporary_path_name);
+
+    //TODO: create path!
+  } else {
+    metatempfile = new char[strlen("./")+20];
+    tempfile0 = new char[strlen("./")+20];
+    tempfile1 = new char[strlen("./")+20];
+    tempfile2 = new char[strlen("./")+20];
+    tempfile3 = new char[strlen("./")+20];
+    sprintf(metatempfile, "./~temp00000000.dat");
+    sprintf(tempfile0,    "./~temp000000000.dat");
+    sprintf(tempfile1,    "./~temp000000001.dat");
+    sprintf(tempfile2,    "./~temp000000002.dat");
+    sprintf(tempfile3,    "./~temp000000003.dat");
+  }
+
   if (recursion_depth == 0) {
     int i = 0, j, k;
     do {
@@ -7569,6 +7683,7 @@ void recursion_push() {
   recursion_stack_push(&fin_length, sizeof(fin_length));
   recursion_stack_push(&input_file_name, sizeof(input_file_name));
   recursion_stack_push(&output_file_name, sizeof(output_file_name));
+  recursion_stack_push(&temporary_path_name, sizeof(temporary_path_name));
   recursion_stack_push(&uncompressed_pos, sizeof(uncompressed_pos));
   recursion_stack_push(&uncompressed_start, sizeof(uncompressed_start));
   recursion_stack_push(&compressed_data_found, sizeof(compressed_data_found));
@@ -7694,6 +7809,7 @@ void recursion_pop() {
   recursion_stack_pop(&compressed_data_found, sizeof(compressed_data_found));
   recursion_stack_pop(&uncompressed_start, sizeof(uncompressed_start));
   recursion_stack_pop(&uncompressed_pos, sizeof(uncompressed_pos));
+  recursion_stack_pop(&temporary_path_name, sizeof(temporary_path_name));
   recursion_stack_pop(&output_file_name, sizeof(output_file_name));
   recursion_stack_pop(&input_file_name, sizeof(input_file_name));
   recursion_stack_pop(&fin_length, sizeof(fin_length));
@@ -7779,6 +7895,7 @@ recursion_result recursion_compress(long long compressed_bytes, long long decomp
   delete brute_ignore_offsets;
   delete[] input_file_name;
   delete[] output_file_name;
+  delete[] temporary_path_name;
   delete[] penalty_bytes;
   delete[] local_penalty_bytes;
   delete[] best_penalty_bytes;

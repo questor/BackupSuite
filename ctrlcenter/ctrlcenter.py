@@ -107,8 +107,9 @@ def getFilesizes(filelist):
 		completeSize += os.path.getsize(file)
 	return completeSize
 
-def generateCommandListCompression(toolpath, outputpath, filelist, inputpath):
+def generateCommandListCompression(toolpath, outputpath, filelist, inputpath, tempfolder):
 	cmdlist = []
+	counter = 0
 	for file in filelist:
 		filename, extension = os.path.splitext(file)
 		# extension = '.ext'
@@ -133,6 +134,7 @@ def generateCommandListCompression(toolpath, outputpath, filelist, inputpath):
 			cmd.append("-lt1")
 			cmd.append("-cn")
 			cmd.append("-o%s.pcf" % (outputfile))
+			cmd.append("-u%s/~precomp_temp_%d" % (tempfolder, counter))
 			cmd.append("%s" % (file))
 			cmdlist.append(cmd)
 		elif(lowerExt == '.png') or (lowerExt == '.gif') or (lowerExt == '.pdf') or (lowerExt == 'zip') or (lowerExt == '.gzip') or (lowerExt == '.bzip2'):
@@ -141,10 +143,9 @@ def generateCommandListCompression(toolpath, outputpath, filelist, inputpath):
 			cmd.append("-lt1")
 			cmd.append("-cl")
 			cmd.append("-o%s.pcf" % (outputfile))
+			cmd.append("-u%s/~precomp_temp_%d" % (tempfolder, counter))
 			cmd.append("%s" % (file))
 			cmdlist.append(cmd)
-			# TODO: check if here do not recompress it with lzma but instead use zpag afterwards?
-			# TODO: make list of files to be deleted afterwards because they are temporary
 		else:
 			cmd = []
 			cmd.append("%s/zpaq715" % toolpath)
@@ -162,6 +163,8 @@ def generateCommandListCompression(toolpath, outputpath, filelist, inputpath):
 			#-rw-rw-r-- 1 devenv devenv  1726904 Jun 13 16:54 pixelwp2.pcf_LZMA
 			#-rw-rw-r-- 1 devenv devenv  1439668 Jun 13 16:56 test.zpaq (-m5) (50sec)
 			#-rw-rw-r-- 1 devenv devenv  1517409 Jun 13 16:59 test.zpaq (-m4) (13sec)
+			
+		counter = counter + 1
 			
 	return cmdlist
 
@@ -219,6 +222,13 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 
 	temporaryPath = tempfile.gettempdir()
+
+	if(not args.input.endswith('/')) and (not args.input.endswith('\\')):
+		args.input = args.input + '/'
+
+	if(not args.output.endswith('/')) and (not args.output.endswith('\\')):
+		args.input = args.input + '/'
+
 
 	count = multiprocessing.cpu_count()
 	pool = multiprocessing.Pool(processes=count)
@@ -321,14 +331,14 @@ if __name__ == '__main__':
 				f.write("%s\n" % itemStr)
 			f.close()
 
-		print(Fore.BLUE + "-Create folder structure in ouput path" + Style.RESET_ALL)
+		print((Fore.BLUE + "-Create folder structure in ouput path %s" + Style.RESET_ALL) % args.output)
 		for dir in dirs:
-			dir = dir.replace(normalizePath(args.input), "")
+			dir = dir.replace(args.input, "")
 			path = os.path.join(args.output, dir)
 			os.makedirs(path, exist_ok=True)
 
 		print(Fore.BLUE + "-Generate commands to compress data" + Style.RESET_ALL)
-		cmds = generateCommandListCompression(args.tools, args.output, files, normalizePath(args.input))
+		cmds = generateCommandListCompression(args.tools, args.output, files, normalizePath(args.input), temporaryPath)
 
 		print(Fore.BLUE + "-Compress all files" + Style.RESET_ALL)
 		compressresults = []
