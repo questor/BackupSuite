@@ -2366,9 +2366,10 @@ void denit_compress() {
   remove(tempfile1);
   remove(tempfile2);
   remove(tempfile3);
+  remove(temporary_path_name);
 
   tempfilelist_count -= 8;
-  tempfilelist = (char*)realloc(tempfilelist, 20 * tempfilelist_count * sizeof(char));
+  tempfilelist = (char*)realloc(tempfilelist, (strlen(temporary_path_name)+20) * tempfilelist_count * sizeof(char));
 
   if (recursion_depth == 0) {
     free(ignore_list);
@@ -2408,9 +2409,10 @@ void denit_decompress() {
   remove(tempfile1);
   remove(tempfile2);
   remove(tempfile3);
+  remove(temporary_path_name);
 
   tempfilelist_count -= 8;
-  tempfilelist = (char*)realloc(tempfilelist, 20 * tempfilelist_count * sizeof(char));
+  tempfilelist = (char*)realloc(tempfilelist, (strlen(temporary_path_name)+20) * tempfilelist_count * sizeof(char));
 
   denit();
 }
@@ -7571,44 +7573,36 @@ bool makePath(const std::string& path) {
 
 
 void init_temp_files() {
-  if(temporary_path_name != NULL) {
+  int offsetToFilename;
+  if(temporary_path_name == NULL) {
+    temporary_path_name = new char[4];
+    strcpy(temporary_path_name, ".");
+  } else {
     std::string path(temporary_path_name);
     if(makePath(path) == false) {
       printf("could not create destination directory\n");
       exit(1);
     }
-
-    metatempfile = new char[strlen(temporary_path_name)+20];
-    tempfile0 = new char[strlen(temporary_path_name)+20];
-    tempfile1 = new char[strlen(temporary_path_name)+20];
-    tempfile2 = new char[strlen(temporary_path_name)+20];
-    tempfile3 = new char[strlen(temporary_path_name)+20];
-    sprintf(metatempfile, "%s/~temp00000000.dat", temporary_path_name);
-    sprintf(tempfile0,    "%s/~temp000000000.dat", temporary_path_name);
-    sprintf(tempfile1,    "%s/~temp000000001.dat", temporary_path_name);
-    sprintf(tempfile2,    "%s/~temp000000002.dat", temporary_path_name);
-    sprintf(tempfile3,    "%s/~temp000000003.dat", temporary_path_name);
-
-    //TODO: create path!
-  } else {
-    metatempfile = new char[strlen("./")+20];
-    tempfile0 = new char[strlen("./")+20];
-    tempfile1 = new char[strlen("./")+20];
-    tempfile2 = new char[strlen("./")+20];
-    tempfile3 = new char[strlen("./")+20];
-    sprintf(metatempfile, "./~temp00000000.dat");
-    sprintf(tempfile0,    "./~temp000000000.dat");
-    sprintf(tempfile1,    "./~temp000000001.dat");
-    sprintf(tempfile2,    "./~temp000000002.dat");
-    sprintf(tempfile3,    "./~temp000000003.dat");
   }
+
+  metatempfile = new char[strlen(temporary_path_name)+20];
+  tempfile0 = new char[strlen(temporary_path_name)+20];
+  tempfile1 = new char[strlen(temporary_path_name)+20];
+  tempfile2 = new char[strlen(temporary_path_name)+20];
+  tempfile3 = new char[strlen(temporary_path_name)+20];
+  sprintf(metatempfile, "%s/~temp00000000.dat", temporary_path_name);
+  sprintf(tempfile0,    "%s/~temp000000000.dat", temporary_path_name);
+  sprintf(tempfile1,    "%s/~temp000000001.dat", temporary_path_name);
+  sprintf(tempfile2,    "%s/~temp000000002.dat", temporary_path_name);
+  sprintf(tempfile3,    "%s/~temp000000003.dat", temporary_path_name);
+  offsetToFilename = strlen(temporary_path_name)+1;
 
   if (recursion_depth == 0) {
     int i = 0, j, k;
     do {
       k = i;
       for (j = 1; j >= 0; j--) {
-        metatempfile[5 + j] = '0' + (k % 10);
+        metatempfile[offsetToFilename + 5 + j] = '0' + (k % 10);
         k /= 10;
       }
       i++;
@@ -7620,7 +7614,7 @@ void init_temp_files() {
   do {
     k = i;
     for (j = 7; j >= 2; j--) {
-      metatempfile[5+j] = '0' + (k % 10);
+      metatempfile[offsetToFilename + 5 + j] = '0' + (k % 10);
       k /= 10;
     }
     i++;
@@ -7628,18 +7622,18 @@ void init_temp_files() {
 
   k = i - 1;
   for (j = 7; j >= 2; j--) {
-    tempfile0[5+j] = '0' + (k % 10);
-    tempfile1[5+j] = '0' + (k % 10);
-    tempfile2[5+j] = '0' + (k % 10);
-    tempfile3[5+j] = '0' + (k % 10);
+    tempfile0[offsetToFilename+5+j] = '0' + (k % 10);
+    tempfile1[offsetToFilename+5+j] = '0' + (k % 10);
+    tempfile2[offsetToFilename+5+j] = '0' + (k % 10);
+    tempfile3[offsetToFilename+5+j] = '0' + (k % 10);
     k /= 10;
   }
   k = tempfile_instance;
   for (j = 1; j >= 0; j--) {
-    tempfile0[5 + j] = '0' + (k % 10);
-    tempfile1[5 + j] = '0' + (k % 10);
-    tempfile2[5 + j] = '0' + (k % 10);
-    tempfile3[5 + j] = '0' + (k % 10);
+    tempfile0[offsetToFilename+5 + j] = '0' + (k % 10);
+    tempfile1[offsetToFilename+5 + j] = '0' + (k % 10);
+    tempfile2[offsetToFilename+5 + j] = '0' + (k % 10);
+    tempfile3[offsetToFilename+5 + j] = '0' + (k % 10);
     k /= 10;
   }
 
@@ -7649,18 +7643,18 @@ void init_temp_files() {
 
   // update temporary file list
   tempfilelist_count += 8;
-  tempfilelist = (char*)realloc(tempfilelist, 20 * tempfilelist_count * sizeof(char));
-  strcpy(tempfilelist + (tempfilelist_count - 8) * 20, metatempfile);
-  strcpy(tempfilelist + (tempfilelist_count - 7) * 20, tempfile0);
-  strcpy(tempfilelist + (tempfilelist_count - 6) * 20, tempfile1);
+  tempfilelist = (char*)realloc(tempfilelist, (strlen(temporary_path_name)+20) * tempfilelist_count * sizeof(char));
+  strcpy(tempfilelist + (tempfilelist_count - 8) * (strlen(temporary_path_name)+20), metatempfile);
+  strcpy(tempfilelist + (tempfilelist_count - 7) * (strlen(temporary_path_name)+20), tempfile0);
+  strcpy(tempfilelist + (tempfilelist_count - 6) * (strlen(temporary_path_name)+20), tempfile1);
 
   // recursion input file
-  strcpy(tempfilelist + (tempfilelist_count - 5) * 20, tempfile1);
-  tempfilelist[(tempfilelist_count - 5) * 20 + 18] = '_';
-  tempfilelist[(tempfilelist_count - 5) * 20 + 19] = 0;
+  strcpy(tempfilelist + (tempfilelist_count - 5) * (strlen(temporary_path_name)+20), tempfile1);
+  tempfilelist[(tempfilelist_count - 5) * (strlen(temporary_path_name)+20) + 18] = '_';
+  tempfilelist[(tempfilelist_count - 5) * (strlen(temporary_path_name)+20) + 19] = 0;
 
-  strcpy(tempfilelist + (tempfilelist_count - 4) * 20, tempfile2);
-  strcpy(tempfilelist + (tempfilelist_count - 2) * 20, tempfile3);
+  strcpy(tempfilelist + (tempfilelist_count - 4) * (strlen(temporary_path_name)+20), tempfile2);
+  strcpy(tempfilelist + (tempfilelist_count - 2) * (strlen(temporary_path_name)+20), tempfile3);
 }
 
 void recursion_stack_push(void* var, int var_size) {
@@ -8439,8 +8433,8 @@ void ctrl_c_handler(int sig) {
   if (tempfilelist_count > 0) {
     printf("Removing temporary files...\n");
     for (int i = 0; i < tempfilelist_count; i++) {
-      if ((tempfilelist[i * 20]) == '~') { // just to be safe
-        remove(tempfilelist + i * 20);
+      if ((tempfilelist[i * (strlen(temporary_path_name)+20)]) == '~') { // just to be safe
+        remove(tempfilelist + i * (strlen(temporary_path_name)+20));
       }
     }
   }
