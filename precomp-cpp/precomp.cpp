@@ -109,7 +109,7 @@ using namespace std;
 #define PENALTY_BYTES_TOLERANCE 160
 #define IDENTICAL_COMPRESSED_BYTES_TOLERANCE 32
 
-#define MAX_IO_BUFFER_SIZE 64 * 1024 * 1024
+#define MAX_IO_BUFFER_SIZE 256 * 1024 * 1024
 unsigned char* decomp_io_buf = NULL;
 
 unsigned char copybuf[COPY_BUF_SIZE];
