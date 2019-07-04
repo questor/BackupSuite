@@ -504,9 +504,7 @@ int main(int argc, char* argv[])
     case P_COMPRESS:
       {
         start_time = get_time_ms();
-        if (!compress_file()) { // none of the streams could be decompressed
-          return_errorlevel = RETURN_NOTHING_DECOMPRESSED;
-        }
+        compress_file();
         break;
       }
 
@@ -6379,7 +6377,7 @@ void try_decompression_gif(unsigned char version[5]) {
   decompressed_streams_count++;
   decompressed_gif_count++;
 
-  ftempout = tryOpen(tempfile1, "rb");
+  ftempout = tryOpen(tempfile1, "rb");          //this is the gif file
   frecomp = tryOpen(tempfile2,"wb");
   if (recompress_gif(ftempout, frecomp, block_size, &gCode, &gDiff)) {
 
@@ -6392,11 +6390,11 @@ void try_decompression_gif(unsigned char version[5]) {
 
     if (best_identical_bytes < gif_length) {
       if (DEBUG_MODE) {
-      printf ("Recompression failed\n");
+      printf ("GIF Recompression failed\n");
       }
     } else {
       if (DEBUG_MODE) {
-      printf ("Recompression successful\n");
+      printf ("GIF Recompression successful\n");
       }
       recompress_success_needed = true;
 

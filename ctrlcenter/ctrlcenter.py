@@ -2,6 +2,8 @@
 # TODOs:
 # - verify doesn't work with incremental backups as not all files in the database
 #   are available on the media
+# - uncompressible zpaq is handled by zpaq, precomp(especially gif) not yet. for uncompressible
+#   gif even worse a defect file is left on the disc!
 
 import multiprocessing
 import subprocess
