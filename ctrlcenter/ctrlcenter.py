@@ -23,6 +23,8 @@ def normalizePath(path):
 
 def runProcess(cmd):
 	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+	if(result.returncode != 0):
+		print((Fore.RED + "CMD FAILED: %s" + Style.RESET_ALL) % cmd)
 	return result
 
 def uncompressAndGenerateHash(args):
@@ -289,6 +291,7 @@ if __name__ == '__main__':
 				print(Fore.BLUE + "-Search for updates of files (incremental update mode)" + Style.RESET_ALL)
 
 				filelistToProcess = []
+				newfilelist = []
 				for item in hashestowrite:
 
 					filehashfunc, space, rest = item.partition(' ')
@@ -301,18 +304,21 @@ if __name__ == '__main__':
 							found = True
 							if(database[idx][1] != filehashvalue):
 								filelistToProcess.append(item)
+								newfilelist.append(item[2])
 								database[idx][1] = filehashvalue			# update database to have new hash
 								print(Fore.GREEN + "IncrementalMode: filehash changed, process file %s" % filepath)
-							else:
-								print(Fore.GREEN + "IncrementalMode: unchanged, skip file %s" % filepath)
+							#else:
+							#	print(Fore.GREEN + "IncrementalMode: unchanged, skip file %s" % filepath)
 							break
 
 					if not found:
 						print(Fore.GREEN + "IncrementalMode: new file %s" % filepath)
 						database.append([filehashfunc, filehashvalue, filepath])
 						filelistToProcess.append(item)
+						newfilelist.append(item[2])
 
 				hashestowrite = filelistToProcess
+				files = newfilelist
 
 				if len(hashestowrite) == 0:
 					print(Fore.GREEN + "-IncrementalMode: found nothing to do, all files unchanged. exiting")
