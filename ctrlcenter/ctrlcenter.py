@@ -4,6 +4,8 @@
 #   are available on the media
 # - uncompressible zpaq is handled by zpaq, precomp(especially gif) not yet. for uncompressible
 #   gif even worse a defect file is left on the disc!
+# - gif-handling seems to be broken in precomp, files are decompressed not the same as the original
+#   ones, so for the time beeing gif is processed through zpaq
 
 import multiprocessing
 import subprocess
@@ -139,7 +141,7 @@ def generateCommandListCompression(toolpath, outputpath, filelist, inputpath, te
 			cmd.append("-u%s/~precomp_temp_%d" % (tempfolder, counter))
 			cmd.append("%s" % (file))
 			cmdlist.append(cmd)
-		elif(lowerExt == '.png') or (lowerExt == '.gif') or (lowerExt == '.pdf') or (lowerExt == 'zip') or (lowerExt == '.gzip') or (lowerExt == '.bzip2'):
+		elif(lowerExt == '.png') or (lowerExt == '.pdf') or (lowerExt == 'zip') or (lowerExt == '.gzip') or (lowerExt == '.bzip2'):
 			cmd = []
 			cmd.append("%s/precomp-cpp" % (toolpath))
 			cmd.append("-lt1")
@@ -228,8 +230,9 @@ if __name__ == '__main__':
 	if(not args.input.endswith('/')) and (not args.input.endswith('\\')):
 		args.input = args.input + '/'
 
-	if(not args.output.endswith('/')) and (not args.output.endswith('\\')):
-		args.input = args.input + '/'
+	if(args.output):
+		if(not args.output.endswith('/')) and (not args.output.endswith('\\')):
+			args.input = args.input + '/'
 
 
 	count = multiprocessing.cpu_count()
@@ -372,7 +375,7 @@ if __name__ == '__main__':
 
 		print((Fore.BLUE + "-Found %d files" + Style.RESET_ALL) % len(files))
 
-		print(Fore.BLUE + "-Create folder structure in ouput path" + Style.RESET_ALL)
+		print(Fore.BLUE + "-Create folder structure in temporary path" + Style.RESET_ALL)
 		for dir in dirs:
 			dir = dir.replace(normalizePath(args.input), "")
 			path = os.path.join("/tmp/", dir)
@@ -391,6 +394,7 @@ if __name__ == '__main__':
 
 		# here in verifyResults the path is still wrong because it's lead by "/tmp/" which need to be removed...
 
+		print(Fore.BLUE + "-Comparing all hashes to found files" + Style.RESET_ALL)
 		# create set of all file hashes
 		originalHashes = {}
 		allOK = True
@@ -404,7 +408,7 @@ if __name__ == '__main__':
 
 				filepath = filepath.strip()
 
-				origFile = [x for x in verifyResults if x.endswith(filepath)]
+				origFile = [x for x in verifyResults if x.endswith(" "+filepath)]			# force comparison of complete path
 
 				if(len(origFile) == 1):
 					origFile = str(origFile)
@@ -412,7 +416,10 @@ if __name__ == '__main__':
 						print((Fore.RED + "%s: HASH HAS CHANGED!(%s,%s)" + Style.RESET_ALL) % (filepath, origFile, filehashvalue))
 						allOK = False
 				else:
-					notFoundFiles.append(filepath)
+					if(len(origFile) == 0):
+						notFoundFiles.append(filepath)
+					else:
+						print((Fore.RED + "More than one entry in database found for file %s, dunno what to do?" + Style.RESET_ALL) % filepath)
 					allOK = False
 
 		# TODO: how to find files which are present on disc, but not in the filehashes-file?
