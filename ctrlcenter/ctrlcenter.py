@@ -304,7 +304,7 @@ if __name__ == '__main__':
 							found = True
 							if(database[idx][1] != filehashvalue):
 								filelistToProcess.append(item)
-								newfilelist.append(item[2])
+								newfilelist.append(filepath)
 								database[idx][1] = filehashvalue			# update database to have new hash
 								print(Fore.GREEN + "IncrementalMode: filehash changed, process file %s" % filepath)
 							#else:
@@ -315,7 +315,7 @@ if __name__ == '__main__':
 						print(Fore.GREEN + "IncrementalMode: new file %s" % filepath)
 						database.append([filehashfunc, filehashvalue, filepath])
 						filelistToProcess.append(item)
-						newfilelist.append(item[2])
+						newfilelist.append(filepath)
 
 				hashestowrite = filelistToProcess
 				files = newfilelist
