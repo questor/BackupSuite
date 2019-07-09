@@ -28,6 +28,10 @@
 #include <io.h>
 #endif
 
+#ifndef LINUX
+#include <io.h>
+#endif
+
 #ifdef HAVE_FCNTL_H
 #include <fcntl.h>
 #endif /* HAVE_FCNTL_H */
@@ -228,7 +232,7 @@ DGifOpenFileHandle(int FileHandle) {
         return NULL;
     }
 #ifdef __MSDOS__
-    setmode(FileHandle, O_BINARY);    /* Make sure it is in binary mode. */
+    _setmode(FileHandle, O_BINARY);    /* Make sure it is in binary mode. */
 #endif /* __MSDOS__ */
 
     f = fdopen(FileHandle, "rb");    /* Make it into a stream: */

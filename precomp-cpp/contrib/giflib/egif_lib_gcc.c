@@ -23,6 +23,10 @@
 #include <stdint.h>
 #endif
 
+#ifndef LINUX
+#include <io.h>
+#endif
+
 #ifdef __MSDOS__
 #include <io.h>
 #include <alloc.h>

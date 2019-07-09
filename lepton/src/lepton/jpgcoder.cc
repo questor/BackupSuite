@@ -87,6 +87,7 @@ volatile int volatile1024 = 1024;
 #ifdef EMSCRIPTEN
 #include <emscripten.h>
 #endif
+
 unsigned char g_zlib_0_writer[sizeof(Sirikata::Zlib0Writer)];
 void * uninit_g_zlib_0_writer = &g_zlib_0_writer[0];
 unsigned char EOI[ 2 ] = { 0xFF, 0xD9 }; // EOI segment
@@ -1750,7 +1751,7 @@ void process_file(IOUtil::FileReader* reader,
             fprintf(stderr, "Only allowed to set unkillable for items with a time bound\n");
             exit(1);
         }
-        signal(SIGTERM, &sig_nop);
+        signal(SIGTERM, (_crt_signal_t)&sig_nop);
 #ifndef _WIN32
         signal(SIGQUIT, &sig_nop);
 #endif

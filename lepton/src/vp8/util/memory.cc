@@ -165,6 +165,8 @@ bool g_use_seccomp =
     true
 #endif
     ;
+
+#ifndef _WIN32
 void* operator new (size_t size) throw(std::bad_alloc){
  void* ptr = custom_malloc(size); 
  if (ptr == 0) {// did malloc succeed?
@@ -193,6 +195,8 @@ void operator delete (void* ptr) throw(){
 void operator delete[] (void* ptr) throw(){
     custom_free(ptr);
 }
+#endif
+
 THREAD_LOCAL_STORAGE int l_emergency_close_signal = -1;
 THREAD_LOCAL_STORAGE void (*atexit_f)(void*, uint64_t) = nullptr;
 THREAD_LOCAL_STORAGE void *atexit_arg0 = nullptr;

@@ -493,7 +493,7 @@ int main(int argc, char* argv[])
   int return_errorlevel = 0;
 
   // register CTRL-C handler
-  (void) signal(SIGINT, ctrl_c_handler);
+  (void) signal(SIGINT, (_crt_signal_t)ctrl_c_handler);
 
   #ifndef COMFORT
   switch (init(argc, argv)) {

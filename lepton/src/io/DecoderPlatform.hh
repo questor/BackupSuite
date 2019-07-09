@@ -60,6 +60,7 @@ typedef int8_t int8;
 #define DECODER_PLATFORM_HH_
 #ifdef _WIN32
 #include <io.h>
+/*
 inline int write(int fd, const void*data, unsigned int length) {
     return _write(fd, data, length);
 }
@@ -69,7 +70,9 @@ inline int read(int fd, void*data, unsigned int length) {
 inline int close(int fd) {
     return _close(fd);
 }
+*/
 typedef int ssize_t;
+
 #endif
 
 

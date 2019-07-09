@@ -23,6 +23,7 @@
 #include <signal.h>
 #include "generic_worker.hh"
 #include "../../io/Seccomp.hh"
+
 /**
  * A Crossplatform-ish pause function.
  * Since we can't rely on the _mm_pause instrinsic being available
