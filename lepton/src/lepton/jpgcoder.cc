@@ -1751,7 +1751,11 @@ void process_file(IOUtil::FileReader* reader,
             fprintf(stderr, "Only allowed to set unkillable for items with a time bound\n");
             exit(1);
         }
+#ifndef _WIN32
+        signal(SIGTERM, &sig_nop);
+#else
         signal(SIGTERM, (_crt_signal_t)&sig_nop);
+#endif
 #ifndef _WIN32
         signal(SIGQUIT, &sig_nop);
 #endif
