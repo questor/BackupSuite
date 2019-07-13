@@ -273,7 +273,11 @@ if __name__ == '__main__':
 				print(Fore.RED + "HASHERROR: %s(%d)" + Style.RESET_ALL % (result.stdout, result.returncode))
 				errorfiles.append(result.stdout)
 			else:
-				hashestowrite.append(result.stdout.decode('UTF-8'))
+				try:
+					hashestowrite.append(result.stdout.decode('UTF-8'))
+				except:
+					print("runtime error for <%s>" % result.stdout)
+					raise SystemExit
 
 		database = []
 		if args.database is not None:

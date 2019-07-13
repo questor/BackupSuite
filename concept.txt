@@ -1,5 +1,8 @@
 
 
+Python-Module needed: tqdm colorama
+
+
 GUI:
 - imgui for python: https://github.com/swistakm/pyimgui
 - example for python backup: https://github.com/koldinger/Tardis/tree/master/Tardis
