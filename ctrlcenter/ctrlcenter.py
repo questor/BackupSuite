@@ -10,6 +10,7 @@
 import multiprocessing
 import subprocess
 import os
+import sys
 #import re
 import argparse
 import tempfile
@@ -84,7 +85,10 @@ def uncompressAndGenerateHash(args):
 
 	os.remove(outputfile)
 
-	ret = result.stdout.decode('UTF-8')
+	if sys.platform == 'win32':
+		ret = result.stdout.decode('cp1252')
+	else:
+		ret = result.stdout.decode('UTF-8')
 	return ret
 
 def generateFilelist(path):
@@ -273,11 +277,10 @@ if __name__ == '__main__':
 				print(Fore.RED + "HASHERROR: %s(%d)" + Style.RESET_ALL % (result.stdout, result.returncode))
 				errorfiles.append(result.stdout)
 			else:
-				try:
+				if sys.platform == 'win32':
+					hashestowrite.append(result.stdout.decode('cp1252'))
+				else:
 					hashestowrite.append(result.stdout.decode('UTF-8'))
-				except:
-					print("runtime error for <%s>" % result.stdout)
-					raise SystemExit
 
 		database = []
 		if args.database is not None:
