@@ -1,11 +1,31 @@
 
 
 Python-Module needed: tqdm colorama
+Python 3.5 or higher needed!
 
 
-GUI:
-- imgui for python: https://github.com/swistakm/pyimgui
-- example for python backup: https://github.com/koldinger/Tardis/tree/master/Tardis
+Unicode-Filenames makes issues in all steps! hash-creation does not support it, recompressors also not.
+
+
+Same functionality as the python-script could be done with bash-scripts:
+https://web.archive.org/web/20151228095434/http://superuser.com/questions/862323/offline-incremental-backup-via-thumbdrive
+	Here's 2 "main" bash lines I've used, the first just to md5 all files to be backed up, then sort & zip the list. Restricting by date could be useful here:
+		find . -type f -print0|xargs -0 md5sum|sort -k 1.35|gzip -9 > $newmd5
+	And to get new files to add:
+		zdiff $newmd5 $oldmd5|sort -k 1.37|sed -n '/^</ p'|cut -c 39- > new.txt
+	Could grep "FAILED open" from a md5sum -c of the old md5 info file to find deleted files, or different diff result parsing.
+https://github.com/miekg/rdup
+https://stackoverflow.com/questions/17334014/move-files-to-directories-based-on-extension
+	find . -name '*mp3' -or -name '*ogg' -print | xargs -J% mv % ../../Music
+	find . -name '*mp3' -or -name '*ogg' -exec mv {} ../Music \;
+https://github.com/shenwei356/rush
+
+
+
+
+How to make windows command line arguments unicode:
+- https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/fopen-wfopen?view=vs-2019
+- http://zetcode.com/gui/winapi/main/
 
 
 Preprocessors for Files:

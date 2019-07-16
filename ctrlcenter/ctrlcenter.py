@@ -7,6 +7,9 @@
 # - gif-handling seems to be broken in precomp, files are decompressed not the same as the original
 #   ones, so for the time beeing gif is processed through zpaq
 
+# - on windows you should NOT use drive-characters because they will end up in the hash-file-list and
+#   database and you can not easily use the same archive on linux
+
 import multiprocessing
 import subprocess
 import os
@@ -129,6 +132,9 @@ def generateCommandListCompression(toolpath, outputpath, filelist, inputpath, te
 
 		outputfile = file.replace(inputpath, "")
 		outputfile = os.path.join(args.output, outputfile)
+
+#		file = file.encode("utf-16")
+#		outputfile = outputfile.encode("utf-16")
 
 		if(lowerExt == '.jpg') or (lowerExt == '.jpeg'):
 			cmd = []
@@ -350,9 +356,11 @@ if __name__ == '__main__':
 			f.close()
 
 		print((Fore.BLUE + "-Create folder structure in ouput path %s" + Style.RESET_ALL) % args.output)
+		normalizedInput = normalizePath(args.input)
+		normalizedOutput = normalizePath(args.output)
 		for dir in dirs:
-			dir = dir.replace(args.input, "")
-			path = os.path.join(args.output, dir)
+			dir = dir.replace(normalizedInput, "")
+			path = os.path.join(normalizedOutput, dir)
 			os.makedirs(path, exist_ok=True)
 
 		print(Fore.BLUE + "-Generate commands to compress data" + Style.RESET_ALL)
