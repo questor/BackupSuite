@@ -716,6 +716,7 @@ SubprocessConnection start_subprocess(int argc, const char **argv, bool pipe_std
         &siStartInfo,
         &piProcInfo)) {
         fprintf(stderr, "Failed To start subprocess with command line ", command_line);
+        fprintf(stderr, ">%s<\n", argv[0]);
         custom_exit(ExitCode::OS_ERROR);
     }
     CloseHandle(piProcInfo.hProcess);

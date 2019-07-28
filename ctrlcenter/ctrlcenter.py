@@ -48,7 +48,10 @@ def uncompressAndGenerateHash(args):
 
 	if(lowerExt == '.lepton'):
 		cmd = []
-		cmd.append("%s/lepton" % toolpath)
+		if sys.platform == 'win32':
+			cmd.append("%s/lepton.exe" % toolpath)
+		else:
+			cmd.append("%s/lepton" % toolpath)
 		cmd.append("-singlethread")
 		cmd.append("-allowprogressive") 
 		cmd.append("%s" % file)					# is already with .lepton!
@@ -138,7 +141,10 @@ def generateCommandListCompression(toolpath, outputpath, filelist, inputpath, te
 
 		if(lowerExt == '.jpg') or (lowerExt == '.jpeg'):
 			cmd = []
-			cmd.append("%s/lepton" % (toolpath))
+			if sys.platform == 'win32':
+				cmd.append("%s/lepton.exe" % toolpath)
+			else:
+				cmd.append("%s/lepton" % toolpath)
 			cmd.append("-singlethread")
 			cmd.append("-allowprogressive") 
 			cmd.append("%s" % (file))
