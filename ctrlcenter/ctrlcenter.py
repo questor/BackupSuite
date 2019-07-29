@@ -19,7 +19,15 @@ import argparse
 import tempfile
 import tqdm
 
-from colorama import init, deinit, Fore, Back, Style
+import shutil
+from colorama import Fore, Back, Style
+import colorama
+
+counter = None
+
+def init(args):
+	global counter
+	counter = args
 
 def normalizePath(path):
 #	return os.path.normpath(os.sep.join(re.split(r'\\|/', path)))
@@ -30,6 +38,75 @@ def runProcess(cmd):
 	if(result.returncode != 0):
 		print((Fore.RED + "CMD FAILED: %s" + Style.RESET_ALL) % cmd)
 	return result
+
+def compressFiles(args):
+	global counter
+
+	with counter.get_lock():
+		counter.value += 1
+
+	file = args[0]
+
+	toolpath = args[1][0]
+	outputpath = args[1][1]
+	inputpath = args[1][2]
+	tempfolder = args[1][3]
+
+	filename, extension = os.path.splitext(file)
+	lowerExt = extension.lower()
+
+	#lepton compresses better than precomp-cpp on jpegs
+
+	outputfile = file.replace(inputpath, "")
+	outputfile = os.path.join(outputpath, outputfile)
+
+	cmd = []
+	if(lowerExt == '.jpg') or (lowerExt == '.jpeg'):
+		if sys.platform == 'win32':
+			cmd.append("%s/lepton.exe" % toolpath)
+		else:
+			cmd.append("%s/lepton" % toolpath)
+		cmd.append("-singlethread")
+		cmd.append("-allowprogressive") 
+		cmd.append("%s" % (file))
+		cmd.append("%s.lepton" % (outputfile))
+	elif(lowerExt == '.mp3'):			# don't recompress with lzma, it's bigger afterwards!
+		cmd.append("%s/precomp-cpp" % (toolpath))
+		cmd.append("-lt1")
+		cmd.append("-cn")
+		cmd.append("-o%s.pcf" % (outputfile))
+		cmd.append("-u%s/~precomp_temp_%d" % (tempfolder, counter.value))
+		cmd.append("%s" % (file))
+	elif(lowerExt == '.png') or (lowerExt == '.pdf') or (lowerExt == 'zip') or (lowerExt == '.gzip') or (lowerExt == '.bzip2'):
+		cmd.append("%s/precomp-cpp" % (toolpath))
+		cmd.append("-lt1")
+		cmd.append("-cl")
+		cmd.append("-o%s.pcf" % (outputfile))
+		cmd.append("-u%s/~precomp_temp_%d" % (tempfolder, counter.value))
+		cmd.append("%s" % (file))
+	else:
+		cmd.append("%s/zpaq715" % toolpath)
+		cmd.append("a")
+		cmd.append("%s.zpaq" % outputfile)
+		cmd.append("%s" % file)
+		cmd.append("-m4")
+		cmd.append("-t1")
+		# -m5 is dead slow :/
+		# -m4 is much faster already and still better than lzma2 from precomp-cpp
+
+		#-rwxr-xr-x 1 devenv root    2036046 Jun 13 15:49 pixelwp2.png*
+		#-rw-rw-r-- 1 devenv devenv 12543751 Jun 13 16:55 pixelwp2.pcf
+		#-rw-rw-r-- 1 devenv devenv  1726904 Jun 13 16:54 pixelwp2.pcf_LZMA
+		#-rw-rw-r-- 1 devenv devenv  1439668 Jun 13 16:56 test.zpaq (-m5) (50sec)
+		#-rw-rw-r-- 1 devenv devenv  1517409 Jun 13 16:59 test.zpaq (-m4) (13sec)
+
+	result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+	if(result.returncode != 0):
+		print((Fore.RED + "COMPRESS FAILED: %s copy file without touching it" + Style.RESET_ALL) % cmd)
+		shutil.copyfile(file, outputfile)
+		result.returncode = 0
+	return result
+
 
 def uncompressAndGenerateHash(args):
 	# decompress to temp
@@ -123,73 +200,6 @@ def getFilesizes(filelist):
 		completeSize += os.path.getsize(file)
 	return completeSize
 
-def generateCommandListCompression(toolpath, outputpath, filelist, inputpath, tempfolder):
-	cmdlist = []
-	counter = 0
-	for file in filelist:
-		filename, extension = os.path.splitext(file)
-		# extension = '.ext'
-		lowerExt = extension.lower()
-
-		#lepton compresses better than precomp-cpp on jpegs
-
-		outputfile = file.replace(inputpath, "")
-		outputfile = os.path.join(args.output, outputfile)
-
-#		file = file.encode("utf-16")
-#		outputfile = outputfile.encode("utf-16")
-
-		if(lowerExt == '.jpg') or (lowerExt == '.jpeg'):
-			cmd = []
-			if sys.platform == 'win32':
-				cmd.append("%s/lepton.exe" % toolpath)
-			else:
-				cmd.append("%s/lepton" % toolpath)
-			cmd.append("-singlethread")
-			cmd.append("-allowprogressive") 
-			cmd.append("%s" % (file))
-			cmd.append("%s.lepton" % (outputfile))
-			cmdlist.append(cmd)
-		elif(lowerExt == '.mp3'):			# don't recompress with lzma, it's bigger afterwards!
-			cmd = []
-			cmd.append("%s/precomp-cpp" % (toolpath))
-			cmd.append("-lt1")
-			cmd.append("-cn")
-			cmd.append("-o%s.pcf" % (outputfile))
-			cmd.append("-u%s/~precomp_temp_%d" % (tempfolder, counter))
-			cmd.append("%s" % (file))
-			cmdlist.append(cmd)
-		elif(lowerExt == '.png') or (lowerExt == '.pdf') or (lowerExt == 'zip') or (lowerExt == '.gzip') or (lowerExt == '.bzip2'):
-			cmd = []
-			cmd.append("%s/precomp-cpp" % (toolpath))
-			cmd.append("-lt1")
-			cmd.append("-cl")
-			cmd.append("-o%s.pcf" % (outputfile))
-			cmd.append("-u%s/~precomp_temp_%d" % (tempfolder, counter))
-			cmd.append("%s" % (file))
-			cmdlist.append(cmd)
-		else:
-			cmd = []
-			cmd.append("%s/zpaq715" % toolpath)
-			cmd.append("a")
-			cmd.append("%s.zpaq" % outputfile)
-			cmd.append("%s" % file)
-			cmd.append("-m4")
-			cmd.append("-t1")
-			cmdlist.append(cmd)
-			# -m5 is dead slow :/
-			# -m4 is much faster already and still better than lzma2 from precomp-cpp
-
-			#-rwxr-xr-x 1 devenv root    2036046 Jun 13 15:49 pixelwp2.png*
-			#-rw-rw-r-- 1 devenv devenv 12543751 Jun 13 16:55 pixelwp2.pcf
-			#-rw-rw-r-- 1 devenv devenv  1726904 Jun 13 16:54 pixelwp2.pcf_LZMA
-			#-rw-rw-r-- 1 devenv devenv  1439668 Jun 13 16:56 test.zpaq (-m5) (50sec)
-			#-rw-rw-r-- 1 devenv devenv  1517409 Jun 13 16:59 test.zpaq (-m4) (13sec)
-			
-		counter = counter + 1
-			
-	return cmdlist
-
 def mergeFilehashesToDatabase(databasepath, inputpath):
 	database = []
 	if(os.path.isfile(databasepath)):
@@ -229,7 +239,7 @@ def mergeFilehashesToDatabase(databasepath, inputpath):
 
 
 if __name__ == '__main__':
-	init()			#init colorama
+	colorama.init()			#init colorama
 
 	print(Style.RESET_ALL + Fore.GREEN + "BackupIt V1.0 BETA" + Style.RESET_ALL)
 
@@ -252,9 +262,10 @@ if __name__ == '__main__':
 		if(not args.output.endswith('/')) and (not args.output.endswith('\\')):
 			args.input = args.input + '/'
 
+	counter = multiprocessing.Value('i', 0)
 
 	count = multiprocessing.cpu_count()
-	pool = multiprocessing.Pool(processes=count)
+	pool = multiprocessing.Pool(processes=count, initargs=(counter,))
 	print((Fore.BLUE + "-Number CPUs found: %d" + Style.RESET_ALL) % (count))
 
 	if(args.merge):
@@ -369,12 +380,12 @@ if __name__ == '__main__':
 			path = os.path.join(normalizedOutput, dir)
 			os.makedirs(path, exist_ok=True)
 
-		print(Fore.BLUE + "-Generate commands to compress data" + Style.RESET_ALL)
-		cmds = generateCommandListCompression(args.tools, args.output, files, normalizePath(args.input), temporaryPath)
+		compressArgs = [args.tools, args.output, normalizePath(args.input), temporaryPath]
+		newIterable = ([x, compressArgs] for x in files)
 
 		print(Fore.BLUE + "-Compress all files" + Style.RESET_ALL)
 		compressresults = []
-		for res in tqdm.tqdm(pool.imap_unordered(runProcess, cmds), total=len(cmds)):
+		for res in tqdm.tqdm(pool.imap_unordered(compressFiles, newIterable), total=len(files)):
 			compressresults.append(res)
 
 		for result in compressresults:
@@ -409,10 +420,10 @@ if __name__ == '__main__':
 			os.makedirs(path, exist_ok=True)
 
 		verifyargs = [normalizePath(args.input), args.tools]
-		new_iterable = ([x, verifyargs] for x in files)
+		newIterable = ([x, verifyargs] for x in files)
 
 		rawVerifyResults = []
-		for res in tqdm.tqdm(pool.imap_unordered(uncompressAndGenerateHash, new_iterable), total=len(files)):
+		for res in tqdm.tqdm(pool.imap_unordered(uncompressAndGenerateHash, newIterable), total=len(files)):
 			rawVerifyResults.append(res)
 
 		verifyResults = []
@@ -463,4 +474,4 @@ if __name__ == '__main__':
 		else:
 			print(Fore.GREEN + "Verification: all hashes in the file found on disc and are equal" + Style.RESET_ALL)
 	
-	deinit()
+	colorama.deinit()
