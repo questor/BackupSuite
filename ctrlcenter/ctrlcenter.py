@@ -25,6 +25,19 @@ import colorama
 
 counter = None
 
+class Counter(object):
+    def __init__(self, initval=0):
+        self.val = multiprocessing.Value('i', initval)
+        self.lock = multiprocessing.Lock()
+
+    def increment(self):
+        with self.lock:
+            self.val.value += 1
+
+    def value(self):
+        with self.lock:
+            return self.val.value
+
 def init(args):
 	global counter
 	counter = args
@@ -42,8 +55,7 @@ def runProcess(cmd):
 def compressFiles(args):
 	global counter
 
-	with counter.get_lock():
-		counter.value += 1
+	counter.increment()
 
 	file = args[0]
 
@@ -75,14 +87,14 @@ def compressFiles(args):
 		cmd.append("-lt1")
 		cmd.append("-cn")
 		cmd.append("-o%s.pcf" % (outputfile))
-		cmd.append("-u%s/~precomp_temp_%d" % (tempfolder, counter.value))
+		cmd.append("-u%s/~precomp_temp_%d" % (tempfolder, counter.value()))
 		cmd.append("%s" % (file))
 	elif(lowerExt == '.png') or (lowerExt == '.pdf') or (lowerExt == 'zip') or (lowerExt == '.gzip') or (lowerExt == '.bzip2'):
 		cmd.append("%s/precomp-cpp" % (toolpath))
 		cmd.append("-lt1")
 		cmd.append("-cl")
 		cmd.append("-o%s.pcf" % (outputfile))
-		cmd.append("-u%s/~precomp_temp_%d" % (tempfolder, counter.value))
+		cmd.append("-u%s/~precomp_temp_%d" % (tempfolder, counter.value()))
 		cmd.append("%s" % (file))
 	else:
 		cmd.append("%s/zpaq715" % toolpath)
@@ -262,7 +274,7 @@ if __name__ == '__main__':
 		if(not args.output.endswith('/')) and (not args.output.endswith('\\')):
 			args.input = args.input + '/'
 
-	counter = multiprocessing.Value('i', 0)
+	counter = Counter(0)
 
 	count = multiprocessing.cpu_count()
 	pool = multiprocessing.Pool(processes=count, initargs=(counter,))
@@ -274,7 +286,6 @@ if __name__ == '__main__':
 			exit(1)
 		print(Fore.GREEN + "-Merge hashlist to database"+ Style.RESET_ALL)
 		mergeFilehashesToDatabase(args.database, normalizePath(args.input))
-
 
 	if(args.create):
 		print(Fore.GREEN + "-Create archive" + Style.RESET_ALL)
