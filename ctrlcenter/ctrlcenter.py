@@ -277,7 +277,7 @@ if __name__ == '__main__':
 	counter = Counter(0)
 
 	count = multiprocessing.cpu_count()
-	pool = multiprocessing.Pool(processes=count, initargs=(counter,))
+	pool = multiprocessing.Pool(processes=count, initializer=init, initargs=(counter,))
 	print((Fore.BLUE + "-Number CPUs found: %d" + Style.RESET_ALL) % (count))
 
 	if(args.merge):
