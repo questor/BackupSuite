@@ -18,7 +18,7 @@ https://github.com/miekg/rdup
 https://stackoverflow.com/questions/17334014/move-files-to-directories-based-on-extension
 	find . -name '*mp3' -or -name '*ogg' -print | xargs -J% mv % ../../Music
 	find . -name '*mp3' -or -name '*ogg' -exec mv {} ../Music \;
-https://github.com/shenwei356/rush
+https://github.com/shenwei356/rush - A cross-platform command-line tool for executing jobs in parallel
 
 
 

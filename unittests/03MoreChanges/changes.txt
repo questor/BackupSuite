@@ -1,0 +1,15 @@
+- added 10textfile.txt
+- added 11textfile.txt
+- added changes.txt
+- deleted 02textfile.txt
+- changed 01textfile.txt
+- changed 03textfile.txt
+- changed 04textfile.txt
+-----------------------
+- added 20textfile.txt
+- added 21textfile.txt
+- changed changes.txt
+- deleted 01textfile.txt
+- deleted 05textfile.txt
+- changed 10textfile.txt
+- changed 03textfile.txt

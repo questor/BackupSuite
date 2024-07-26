@@ -119,7 +119,7 @@ def compressFiles(args):
 		result.returncode = 0
 	return result
 
-
+# used to verify the compressed data
 def uncompressAndGenerateHash(args):
 	# decompress to temp
 
@@ -260,9 +260,10 @@ if __name__ == '__main__':
 	parser.add_argument('-o', "--output", help="Folder to Backup TO", required=False)
 	parser.add_argument('-t', "--tools", help="Folder to compiled tools", required=False)
 	parser.add_argument('-d', "--database", help="Database-File to Use", required=False)
-	parser.add_argument('-c', "--create", help="Create compressed Structure from input", required=False, action="store_true")
+	parser.add_argument('-c', "--create", help="Create compressed structure from input", required=False, action="store_true")
 	parser.add_argument('-v', "--verify", help="Verify compressed structure", required=False, action="store_true")
 	parser.add_argument('-m', "--merge", help="Merge hashfile to database", required=False, action="store_true")
+#	parser.add_argument('-u', "--unittestpath", help="Directory which is NOT stored as part of the backup(used for unittests)", required=False, action="store_true")
 	args = parser.parse_args()
 
 	temporaryPath = tempfile.gettempdir()
@@ -272,13 +273,13 @@ if __name__ == '__main__':
 
 	if(args.output):
 		if(not args.output.endswith('/')) and (not args.output.endswith('\\')):
-			args.input = args.input + '/'
+			args.output = args.output + '/'
 
 	counter = Counter(0)
 
-	count = multiprocessing.cpu_count()
-	pool = multiprocessing.Pool(processes=count, initializer=init, initargs=(counter,))
-	print((Fore.BLUE + "-Number CPUs found: %d" + Style.RESET_ALL) % (count))
+	numberOfCpus = multiprocessing.cpu_count()
+	pool = multiprocessing.Pool(processes=numberOfCpus, initializer=init, initargs=(counter,))
+	print((Fore.BLUE + "-Number CPUs found: %d" + Style.RESET_ALL) % (numberOfCpus))
 
 	if(args.merge):
 		if args.database is None:

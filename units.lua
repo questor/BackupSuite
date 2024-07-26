@@ -12,6 +12,31 @@ ExternalLibrary {
 }  
 
 Program {
+  Name = "ctrlcenter2",
+  Sources = {
+    "ctrlcenter2/ctrlcenter2.cpp",
+    "ctrlcenter2/argtable3/argtable3.c",
+  },
+  Env = {
+    CPPDEFS = {
+      {Config="*-clang-*"; "LINUX", "UNIX", "HAVE_STDBOOL_H"},
+      {Config="*-msvc-*"; "_UNICODE", "UNICODE"},
+    },
+    CXXOPTS = {
+    },
+    CPPPATH = {
+      "ctrlcenter2",
+    },
+  },
+  Libs = {Config="win32-*-*"; "Comdlg32.lib", "Ole32.lib" },
+  Depends = {
+       "defaultConfiguration"
+  },
+}
+Default "ctrlcenter2"
+
+
+Program {
   Name = "lepton",
   Sources = {
     "lepton/dependencies/md5/md5.c",

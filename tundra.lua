@@ -93,11 +93,11 @@ Build {
        Inherit = common,
        SupportedHosts = { "linux" },
        ReplaceEnv = {
-          CC = "clang-7",
-          CXX = "clang++-7",
-          LD = "clang-7",
-          --LD = "ld.lld-7",
-          LIB = "llvm-ar-7",
+          CC = "clang-16",
+          CXX = "clang++-16",
+          LD = "clang-16",
+          --LD = "ld.lld-16",
+          LIB = "llvm-ar-16",
        },
     },
 		{
