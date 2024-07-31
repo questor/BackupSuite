@@ -22,6 +22,7 @@
 #	include <stddef.h>
 #endif
 
+#include <assert.h>
 
 ///////////////
 // Constants //
