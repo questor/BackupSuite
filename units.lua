@@ -23,6 +23,7 @@ Program {
       {Config="*-msvc-*"; "_UNICODE", "UNICODE"},
     },
     CXXOPTS = {
+      "-std=c++20",
     },
     CPPPATH = {
       "ctrlcenter2",

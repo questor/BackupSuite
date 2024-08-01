@@ -882,9 +882,11 @@ int subprocess_create_ex(const char *const commandLine[], int options,
       return -1;
     }
   } else {
-    if (0 != posix_spawn(&child, commandLine[0], &actions, SUBPROCESS_NULL,
+    int res = posix_spawn(&child, commandLine[0], &actions, SUBPROCESS_NULL,
                          SUBPROCESS_CONST_CAST(char *const *, commandLine),
-                         used_environment)) {
+                         used_environment);
+    if (0 != res) {
+      printf("linux posix spawn return %d\n", res);
       posix_spawn_file_actions_destroy(&actions);
       return -1;
     }

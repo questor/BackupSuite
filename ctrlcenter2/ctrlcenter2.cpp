@@ -12,7 +12,7 @@
 #include "tinyhuman.h"
 #include "tinytty.h"
 
-#include "jq/jq.h"
+#include "quickpool.h"
 #include "concurrentqueue/concurrentqueue.h"
 
 // utils ===========================================================================================
@@ -35,10 +35,31 @@ std::string replaceAll(std::string &input, std::string searchFor, std::string re
 	return str;
 }
 
+const char* ws = " \t\n\r\f\v";
+
+// trim from end of string (right)
+inline std::string& rtrim(std::string& s, const char* t = ws) {
+    s.erase(s.find_last_not_of(t) + 1);
+    return s;
+}
+
+// trim from beginning of string (left)
+inline std::string& ltrim(std::string& s, const char* t = ws) {
+    s.erase(0, s.find_first_not_of(t));
+    return s;
+}
+
+// trim from both ends of string (right then left)
+inline std::string& trim(std::string& s, const char* t = ws) {
+    return ltrim(rtrim(s, t), t);
+}
+
 std::string normalizeFilePath(std::string &input) {
 	std::string retStr;
 	//make sure '\' is converted to '/'
 	retStr = replaceAll(input, "\\", "/");
+	retStr = trim(retStr);
+
 	return retStr;
 }
 std::string normalizeFilePath(const char *input) {
@@ -258,20 +279,48 @@ int main(int argc, char **argv) {
 	    };
     	tinydir( "./", callback );
 
-    	JqAttributes jqAttributes;							//init worker thread system
-    	JqInitAttributes(&jqAttributes);
-    	JqStart(&jqAttributes);
-    	JqSetThreadQueueOrder(&jqAttributes.QueueOrder[0]);
+    	std::vector<std::future<std::string>> results(filesToProcess.size());
 
+    	for(int i=0; i<1/*filesToProcess.size()*/; ++i) {
+    		results[i] = quickpool::async([&filesToProcess](int i) {
+    			std::string &fileToProcess = filesToProcess[i];
 
-		// hash all files
-    	JqHandle hqHandle = JqAdd("Hashing files",
-    		[](int begin, int end) {
-    			printf("hallo\n");
-    		},
-    		0,	//queue
-    		filesToProcess.size(),
-    	);
+    			std::string executable = gConfiguration.toolsFolder + "meowhash";
+
+    			const char *cmdLine[] = {executable.c_str(), fileToProcess.c_str(), nullptr};
+    			subprocess_s subprocess;
+    			int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
+    			if(result != 0) {
+    				printf("SUBPROCESS_CREATE ERROR! %s %s\n", executable.c_str(), fileToProcess.c_str());
+    				//ERROR!
+    			}
+    			int subprocessReturn;
+    			result = subprocess_join(&subprocess, &subprocessReturn);
+    			if(result != 0) {
+    				printf("SUBPROCESS_JOIN ERROR!\n");
+    				//ERROR!
+    			}
+    			if(subprocessReturn != 0) {
+    				//ERROR!
+    			}
+
+    			FILE *fp = subprocess_stdout(&subprocess);
+    			char tmp[128];
+    			if(fp != 0) {
+	    			fgets(tmp, 128, fp);
+	    			printf("%s\n", tmp);
+    			}
+    			subprocess_destroy(&subprocess);
+
+    			return std::string(tmp);
+    		}, i);
+    	}
+    	quickpool::wait();
+
+    	for(int i=0; i<results.size(); ++i) {
+    		printf("Results: %s\n", results[i].get().c_str());
+    	}
+
 
 		// search for updates of files in database (hash changed, new file, deleted files?)
 
@@ -283,7 +332,6 @@ int main(int argc, char **argv) {
 
 		// write database
 
-    	JqStop();
 
 	} else if(mergeFlag->count != 0) {
 		printf("\n*mode: merge old filelist to database\n");
