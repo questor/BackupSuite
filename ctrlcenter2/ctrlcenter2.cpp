@@ -9,6 +9,7 @@
 
 #include "subprocess.h"
 #include "tinydir.h"
+#include "tinydirhelper.h"
 #include "tinyhuman.h"
 #include "tinytty.h"
 
@@ -79,35 +80,35 @@ std::string normalizeDirPath(const char *input) {
 	return normalizeDirPath(inputStr);
 }
 
-char *skipWhitespace(char *ptr) {
-	while((*ptr==' ') || (*ptr=='\t')) {
+const char *skipWhitespace(const char *ptr) {
+	while((*ptr==' ') || (*ptr=='\t') || (*ptr==13) || (*ptr==10)) {
 		++ptr;
 	}
 	return ptr;
 }
-char *skipNonWhitespace(char *ptr) {
-	while((*ptr!=' ') && (*ptr!='\t')) {
+const char *skipNonWhitespace(const char *ptr) {
+	while((*ptr!=' ') && (*ptr!='\t') && (*ptr!=13) && (*ptr!=10) && (*ptr!=0)) {
 		++ptr;
 	}
 	return ptr;
 }
-char *skipNewline(char *ptr) {
+const char *skipNewline(const char *ptr) {
 	while((*ptr==13) || (*ptr==10)) {
 		++ptr;
 	}
 	return ptr;
 }
-char *skipNonNewline(char *ptr) {
-	while((*ptr!=13) && (*ptr!=10)) {
+const char *skipNonNewline(const char *ptr) {
+	while((*ptr!=13) && (*ptr!=10) && (*ptr!=0)) {
 		++ptr;
 	}
 	return ptr;
 }
 
-// database ===========================================================================================
-class Database {
+// FileHashes ===========================================================================================
+class FileHashes {
 public:
-	bool readDatabase(const std::string &filePath) {
+	bool readFileHashes(const std::string &filePath) {
 		mFileEntries.clear();
 		mFileEntries.reserve(10000);	//to start with some higher value...
 
@@ -125,33 +126,12 @@ public:
 		}
 		fclose(fp);
 
-		char* readCursor = fileBuffer;
-		while(readCursor < fileBuffer+fileSize) {
-			char *startToken = readCursor;
-			readCursor = skipNonWhitespace(readCursor);
-			std::string hashFunc(startToken, readCursor-1-startToken);
-
-			startToken = skipWhitespace(readCursor);
-			readCursor = skipNonWhitespace(readCursor);
-			std::string hashValue(startToken, readCursor-1-startToken);
-
-			startToken = readCursor;
-			readCursor = skipNonNewline(readCursor);
-			std::string filePath(startToken, readCursor-1-startToken);
-
-			readCursor = skipNewline(readCursor);
-
-			FileEntry entry;
-			entry.mHashFunc = hashFunc;
-			entry.mHashValue = hashValue;
-			entry.mPath = filePath;
-			mFileEntries.push_back(entry);
-		}
+		parseBuffer(fileBuffer, fileSize);
 
 		delete[] fileBuffer;
 		return true;
 	}
-	bool saveDatabase(const std::string &filePath) {
+	bool saveFileHashes(const std::string &filePath) {
 		FILE *fp = fopen(filePath.c_str(), "w");
 		if(fp == 0) {
 			return false;
@@ -168,12 +148,77 @@ public:
 		return mFileEntries.size();
 	}
 
-private:
+	void parseBuffer(const char *buffer, int numberBytes) {
+		const char* readCursor = buffer;
+		while(readCursor < buffer+numberBytes) {
+			const char *startToken = readCursor;
+			readCursor = skipNonWhitespace(readCursor);
+			std::string hashFunc(startToken, readCursor-startToken);
+
+			startToken = skipWhitespace(readCursor);
+			readCursor = skipNonWhitespace(startToken);
+			std::string hashValue(startToken, readCursor-startToken);
+
+			startToken = skipWhitespace(readCursor);
+			readCursor = skipNonWhitespace(startToken);
+			std::string filePath(startToken, readCursor-startToken);
+
+			FileEntry entry;
+			entry.mHashFunc = hashFunc;
+			entry.mHashValue = hashValue;
+			entry.mPath = filePath;
+			mFileEntries.push_back(entry);
+
+			if(readCursor < buffer+numberBytes)
+				readCursor = skipNewline(readCursor);
+		}
+	}
+
+	enum class CompareResult : uint8_t {
+		eSame, eChanged, eNew
+	};
+
+	std::vector<CompareResult> compareToFileHashes(FileHashes &otherFiles) {
+		std::vector<CompareResult> results;
+		results.reserve(mFileEntries.size());
+
+		for(auto &entry : mFileEntries) {
+			int otherFileIndex = otherFiles.findIndexToFile(entry.mPath);
+			if(otherFileIndex == -1) {
+				results.push_back(CompareResult::eNew);
+			} else {
+				if(entry.mHashValue == otherFiles.mFileEntries[otherFileIndex].mHashValue) {
+					results.push_back(CompareResult::eSame);
+				} else {
+					results.push_back(CompareResult::eChanged);
+				}
+			}
+		}
+		return results;
+	}
+
 	struct FileEntry {
 		std::string mHashFunc;
 		std::string mHashValue;
 		std::string mPath;
 	};
+
+	FileEntry &getEntry(int index) {
+		return mFileEntries[index];
+	}
+
+private:
+	int findIndexToFile(std::string &path) {
+		int curIndex = 0;
+		while(curIndex < mFileEntries.size()) {
+			if(path.compare(mFileEntries[curIndex].mPath) == 0) {
+				return curIndex;
+			}
+			curIndex += 1;
+		}
+		return -1;
+	}
+
 	std::vector<FileEntry> mFileEntries;
 };
 
@@ -181,9 +226,9 @@ struct Configuration {
 	std::string inputFolder;
 	std::string outputFolder;
 	std::string toolsFolder;
-	std::string databaseFileName;
+	std::string databaseFilename;
 	std::string unittestPath;
-	Database database;
+	FileHashes database;
 } gConfiguration;
 
 
@@ -194,14 +239,14 @@ int main(int argc, char **argv) {
 	arg_file *inputDir = arg_file1("i", "input", "<dir>", "Folder to Backup FROM");
 	arg_file *outputDir = arg_file1("o", "output", "<dir>", "Folder to Backup TO");
 	arg_file *tools = arg_file0("t", "tools", "<dir>", "Folder to compiled tools");
-	arg_file *databasefile = arg_file0("d", "database", "<file>", "Database-File to use");
+	arg_file *databaseFilename = arg_file0("d", "database", "<file>", "Database-File to use");
 	arg_lit *createFlag = arg_lit0("c", "create", "create initial backup");
 	arg_lit *verifyFlag = arg_lit0("v", "verify", "verify compressed structure");
-	arg_lit *mergeFlag = arg_lit0("m", "merge", "merge hashfile to database");
+	arg_lit *mergeFlag = arg_lit0("m", "merge", "merge hashfile to FileHashes");
 	arg_file *unittestpath = arg_file0("u", "unittestpath", "<dir>", "directory which is NOT stored as part of the backup(used in unittests");
 	struct arg_end *end = arg_end(20);	//store up to 20 errors
 
-	void *argtable[] = {helpFlag, inputDir, outputDir, tools, databasefile,
+	void *argtable[] = {helpFlag, inputDir, outputDir, tools, databaseFilename,
 					createFlag, verifyFlag, mergeFlag, unittestpath, end};
 
 	int exitCode = 0;
@@ -229,10 +274,10 @@ int main(int argc, char **argv) {
 	} else {
 		gConfiguration.toolsFolder = normalizeDirPath(tools->filename[0]);
 	}
-	if(databasefile->count == 0) {
-		gConfiguration.databaseFileName = "database.txt";
+	if(databaseFilename->count == 0) {
+		gConfiguration.databaseFilename = "database.txt";
 	} else {
-		gConfiguration.databaseFileName = normalizeFilePath(databasefile->filename[0]);
+		gConfiguration.databaseFilename = normalizeFilePath(databaseFilename->filename[0]);
 	}
 
 	if(unittestpath->count == 0) {
@@ -247,7 +292,7 @@ int main(int argc, char **argv) {
 	printf("inputFolder: %s\n", gConfiguration.inputFolder.c_str());
 	printf("outputFolder: %s\n", gConfiguration.outputFolder.c_str());
 	printf("toolsFolder: %s\n", gConfiguration.toolsFolder.c_str());
-	printf("databasefilename: %s\n", gConfiguration.databaseFileName.c_str());
+	printf("databasefilename: %s\n", gConfiguration.databaseFilename.c_str());
 	printf("unittestpath: %s\n", gConfiguration.unittestPath.c_str());
 
 	if(verifyFlag->count != 0) {
@@ -256,11 +301,11 @@ int main(int argc, char **argv) {
 		goto exitTool;
 	}
 
-	//try to load database
-	if(gConfiguration.database.readDatabase(gConfiguration.databaseFileName) == true) {
-		printf("- read database %s successfully, %d entries\n", gConfiguration.databaseFileName.c_str(), gConfiguration.database.getNumberEntries());
+	//try to load FileHashes
+	if(gConfiguration.database.readFileHashes(gConfiguration.databaseFilename) == true) {
+		printf("- read database %s successfully, %d entries\n", gConfiguration.databaseFilename.c_str(), gConfiguration.database.getNumberEntries());
 	} else {
-		printf("- database %s not found, start with blank one\n", gConfiguration.databaseFileName.c_str());
+		printf("- database %s not found, start with blank one\n", gConfiguration.databaseFilename.c_str());
 	}
 
 	if(createFlag->count != 0) {
@@ -269,46 +314,53 @@ int main(int argc, char **argv) {
 		// generate list of files to process
 		std::vector<std::string> filesToProcess;
 
+		std::vector<std::string> recursiveFolders;
+
 	    std::function<void(const char *,bool)> callback = [&]( const char *name, bool is_dir ) {
 //	        printf( "%5s %s\n", is_dir ? "<dir>" : "", name );
 	        if( is_dir ) {
-	        	tinydir( name, callback );
+	        	recursiveFolders.push_back(std::string(name));
 	        } else {
 	        	filesToProcess.emplace_back(name);
 	        }
 	    };
     	tinydir( "./", callback );
+    	while(recursiveFolders.size() != 0) {
+    		std::string dir = recursiveFolders.back() + "/";
+    		recursiveFolders.pop_back();
+    		tinydir(dir.c_str(), callback);
+    	}
 
     	std::vector<std::future<std::string>> results(filesToProcess.size());
 
-    	for(int i=0; i<1/*filesToProcess.size()*/; ++i) {
+    	for(int i=0; i<filesToProcess.size(); ++i) {
     		results[i] = quickpool::async([&filesToProcess](int i) {
     			std::string &fileToProcess = filesToProcess[i];
 
     			std::string executable = gConfiguration.toolsFolder + "meowhash";
 
-    			const char *cmdLine[] = {executable.c_str(), fileToProcess.c_str(), nullptr};
+    			const char *cmdLine[] = {executable.c_str(), fileToProcess.c_str(), "--nologo", nullptr};
     			subprocess_s subprocess;
     			int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
     			if(result != 0) {
-    				printf("SUBPROCESS_CREATE ERROR! %s %s\n", executable.c_str(), fileToProcess.c_str());
-    				//ERROR!
+    				printf("ERROR(1) during hashing of file %s\n", fileToProcess.c_str());
+    				exit(-1);
     			}
     			int subprocessReturn;
     			result = subprocess_join(&subprocess, &subprocessReturn);
     			if(result != 0) {
-    				printf("SUBPROCESS_JOIN ERROR!\n");
-    				//ERROR!
+    				printf("ERROR(2) during hashing of file %s\n", fileToProcess.c_str());
+    				exit(-1);
     			}
     			if(subprocessReturn != 0) {
-    				//ERROR!
+    				printf("ERROR(3) during hashing of file %s\n", fileToProcess.c_str());
+    				exit(-1);
     			}
 
     			FILE *fp = subprocess_stdout(&subprocess);
     			char tmp[128];
     			if(fp != 0) {
 	    			fgets(tmp, 128, fp);
-	    			printf("%s\n", tmp);
     			}
     			subprocess_destroy(&subprocess);
 
@@ -317,24 +369,31 @@ int main(int argc, char **argv) {
     	}
     	quickpool::wait();
 
+    	FileHashes filesHashes;
     	for(int i=0; i<results.size(); ++i) {
-    		printf("Results: %s\n", results[i].get().c_str());
+    		std::string res = results[i].get();
+    		filesHashes.parseBuffer(res.c_str(), res.size());
     	}
 
-
-		// search for updates of files in database (hash changed, new file, deleted files?)
+		// search for updates of files in FileHashes (hash changed, new file, deleted files?)
+    	std::vector<FileHashes::CompareResult> compare = filesHashes.compareToFileHashes(gConfiguration.database);
 
 		// write hashes to filelist in output path
 
 		// create folder structure in output path
+		for(int i=0; i<filesHashes.getNumberEntries(); ++i) {
+			if(compare[i] != FileHashes::CompareResult::eSame) {		//changed or new?
+				smartCreate(filesHashes.getEntry(i).mPath);
+			}
+		}
 
 		// compress all files
 
-		// write database
+		// write FileHashes
 
 
 	} else if(mergeFlag->count != 0) {
-		printf("\n*mode: merge old filelist to database\n");
+		printf("\n*mode: merge old filelist to FileHashes\n");
 
 	}
 
