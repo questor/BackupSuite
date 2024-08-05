@@ -30,18 +30,26 @@ bool tinydir( const char *directory, const FN &yield ) {
     }
 #else
     for( DIR *dir = opendir( (src + "/").c_str() ); dir; ) {
+
+        int dfd = dirfd(dir);
+
         for( struct dirent *ep; (ep = readdir( dir )); ) {
-            if( ep->d_name[0] != '.' ) {            //TODO: BREAK .git and so on!
-                struct stat st;
-                const int result = stat(ep->d_name, &st);
-                bool isDir = false;
-                printf("%s: %d %s\n", ep->d_name, result, (S_ISDIR(st.st_mode) != 0)?"true":"false");
-                if((result == 0) && (S_ISDIR(st.st_mode) != 0)) {
-                    isDir = true;
-                }
-                printf("process %s (%s)\n", (src+"/"+ep->d_name).c_str(), isDir?"true":"false");
-                yield( (src + "/" + ep->d_name).c_str(), isDir );
+            if(strcmp(".", ep->d_name) == 0)
+                continue;
+            if(strcmp("..", ep->d_name) == 0)
+                continue;
+
+            struct stat st;
+            if(fstatat(dfd, ep->d_name, &st, 0) == -1) {
+                printf("failed to stat %s, errno: %d\n", ep->d_name, errno);
+                continue;
             }
+            bool isDir = false;
+            if((S_ISDIR(st.st_mode) != 0)) {
+                isDir = true;
+            }
+//            printf("process %s (%s)\n", (src+"/"+ep->d_name).c_str(), isDir?"true":"false");
+            yield( (src + "/" + ep->d_name).c_str(), isDir );
         }
         return closedir( dir ), true;
     }

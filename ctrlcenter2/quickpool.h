@@ -733,6 +733,11 @@ class TaskManager
 
     bool done() const { return (todo_.load(mem::relaxed) <= 0); }
 
+    int number_open_tasks() const
+    {
+        return todo_.load(mem::relaxed);
+    }
+
   private:
     //! worker queues
     mem::aligned::vector<TaskQueue> queues_;
@@ -937,6 +942,9 @@ class ThreadPool
     //! @brief checks whether all jobs are done.
     bool done() const { return task_manager_.done(); }
 
+    //! @brief get number of open jobs currently running
+    int number_open_tasks() const { return task_manager_.number_open_tasks(); }
+
     //! @brief allocator respecting memory alignment.
     static void* operator new(size_t count)
     {
@@ -1038,9 +1046,15 @@ async(Function&& f, Args&&... args) -> std::future<decltype(f(args...))>
 //! @brief waits for all jobs currently running on the global thread pool.
 //! Has no effect when not called from main thread.
 inline void
-wait()
+wait(size_t millis = 0)
 {
-    ThreadPool::global_instance().wait();
+    ThreadPool::global_instance().wait(millis);
+}
+
+inline int
+number_open_tasks()
+{
+    return ThreadPool::global_instance().number_open_tasks();
 }
 
 //! @brief checks whether all globel jobs are done.

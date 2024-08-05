@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <functional>
+#include <atomic>
 
 #include "argtable3/argtable3.h"
 
@@ -324,15 +325,16 @@ int main(int argc, char **argv) {
 	        	filesToProcess.emplace_back(name);
 	        }
 	    };
-    	tinydir( "./", callback );
+	    printf("- scan for files\n");
+    	tinydir( "/home/devenv/BackupSuite/", callback );
     	while(recursiveFolders.size() != 0) {
     		std::string dir = recursiveFolders.back() + "/";
     		recursiveFolders.pop_back();
     		tinydir(dir.c_str(), callback);
     	}
 
+    	printf("- generate hashes for all input files\n");
     	std::vector<std::future<std::string>> results(filesToProcess.size());
-
     	for(int i=0; i<filesToProcess.size(); ++i) {
     		results[i] = quickpool::async([&filesToProcess](int i) {
     			std::string &fileToProcess = filesToProcess[i];
@@ -367,7 +369,11 @@ int main(int argc, char **argv) {
     			return std::string(tmp);
     		}, i);
     	}
-    	quickpool::wait();
+    	while(!quickpool::done()) {
+    		quickpool::wait(10);
+    		printf("\rNumber open jobs: %d", quickpool::number_open_tasks());
+    	}
+    	printf("\r  finished jobs\n");
 
     	FileHashes filesHashes;
     	for(int i=0; i<results.size(); ++i) {
@@ -381,6 +387,7 @@ int main(int argc, char **argv) {
 		// write hashes to filelist in output path
 
 		// create folder structure in output path
+    	printf("- create output folder structure\n");
 		for(int i=0; i<filesHashes.getNumberEntries(); ++i) {
 			if(compare[i] != FileHashes::CompareResult::eSame) {		//changed or new?
 				smartCreate(filesHashes.getEntry(i).mPath);
