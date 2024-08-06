@@ -52,7 +52,7 @@ bool createSingleDir(std::string dir) {
 bool smartCreate(std::string directory) {			//string has to end with "/"!
 	int cursor = 0;
 	int foundPos;
-//	printf("smartCreate(%s)\n", directory.c_str());
+//	printf("==============\nsmartCreate(%s)\n", directory.c_str());
 	while(1) {
 		int foundPos = directory.find("/", cursor);
 //		printf("pos %d\n", foundPos);
@@ -65,9 +65,11 @@ bool smartCreate(std::string directory) {			//string has to end with "/"!
 			break;
 		} else if(foundPos == 0) {
 			// case (2), skip first occurence
+			cursor = foundPos+1;
 		} else {
 			std::string subDir = directory.substr(0, foundPos);
 //			printf("createDir %s\n", subDir.c_str());
+			createSingleDir(subDir);
 			cursor = foundPos+1;
 		}
 	}

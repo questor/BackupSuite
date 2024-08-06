@@ -36,7 +36,6 @@ std::string replaceAll(std::string &input, std::string searchFor, std::string re
 	}
 	return str;
 }
-
 const char* ws = " \t\n\r\f\v";
 
 // trim from end of string (right)
@@ -56,10 +55,17 @@ inline std::string& trim(std::string& s, const char* t = ws) {
     return ltrim(rtrim(s, t), t);
 }
 
-std::string normalizeFilePath(std::string &input) {
-	std::string retStr;
+inline std::string& toLower(std::string &s) {
+	for(char& ch:s) {
+		ch = ::tolower(ch);
+	}
+	return s;
+}
+
+std::string normalizeFilePath(const std::string &input) {
+	std::string retStr = input;
 	//make sure '\' is converted to '/'
-	retStr = replaceAll(input, "\\", "/");
+	retStr = replaceAll(retStr, "\\", "/");
 	retStr = trim(retStr);
 
 	return retStr;
@@ -69,7 +75,7 @@ std::string normalizeFilePath(const char *input) {
 	return normalizeFilePath(inputStr);
 }
 
-std::string normalizeDirPath(std::string &input) {
+std::string normalizeDirPath(const std::string &input) {
 	std::string retStr = normalizeFilePath(input);
 	//make sure directories end with a "/"
 	if(retStr.back() != '/')
@@ -79,6 +85,27 @@ std::string normalizeDirPath(std::string &input) {
 std::string normalizeDirPath(const char *input) {
 	std::string inputStr(input);
 	return normalizeDirPath(inputStr);
+}
+
+std::string extractFolderFromFilePath(const std::string &input) {
+	std::string retStr = normalizeFilePath(input);
+	while((retStr.size() != 0) && (retStr.back() != '/')) {
+//		printf("extract: %s\n", retStr.c_str());
+		retStr.pop_back();
+	}
+	return retStr;
+}
+
+std::string extractFolderFromFilePath(const char *input) {
+	std::string inputStr(input);
+	return extractFolderFromFilePath(input);
+}
+
+std::string extractFileExtensionFromFilePatch(const std::string &input) {
+	size_t pos = input.find_last_of(".");
+	if(pos == std::string::npos)
+		return std::string("");
+	return input.substr(pos+1);
 }
 
 const char *skipWhitespace(const char *ptr) {
@@ -232,7 +259,6 @@ struct Configuration {
 	FileHashes database;
 } gConfiguration;
 
-
 // main ============================================================================================
 
 int main(int argc, char **argv) {
@@ -325,8 +351,11 @@ int main(int argc, char **argv) {
 	        	filesToProcess.emplace_back(name);
 	        }
 	    };
+
 	    printf("- scan for files\n");
-    	tinydir( "/home/devenv/BackupSuite/", callback );
+//    	tinydir( "/home/devenv/BackupSuite/", callback );
+
+    	recursiveFolders.push_back(gConfiguration.inputFolder);
     	while(recursiveFolders.size() != 0) {
     		std::string dir = recursiveFolders.back() + "/";
     		recursiveFolders.pop_back();
@@ -371,9 +400,9 @@ int main(int argc, char **argv) {
     	}
     	while(!quickpool::done()) {
     		quickpool::wait(10);
-    		printf("\rNumber open jobs: %d", quickpool::number_open_tasks());
+    		printf("\r number open jobs: %7d         ", quickpool::number_open_tasks());
     	}
-    	printf("\r  finished jobs\n");
+    	printf("\r  finished jobs                              \n");
 
     	FileHashes filesHashes;
     	for(int i=0; i<results.size(); ++i) {
@@ -388,13 +417,129 @@ int main(int argc, char **argv) {
 
 		// create folder structure in output path
     	printf("- create output folder structure\n");
+    	std::string cachedDir;
 		for(int i=0; i<filesHashes.getNumberEntries(); ++i) {
 			if(compare[i] != FileHashes::CompareResult::eSame) {		//changed or new?
-				smartCreate(filesHashes.getEntry(i).mPath);
+				std::string extractedFolder = extractFolderFromFilePath(filesHashes.getEntry(i).mPath);
+				if(cachedDir.compare(extractedFolder) != 0) {
+					cachedDir = extractedFolder;
+
+					extractedFolder = gConfiguration.outputFolder + extractedFolder;
+
+//					printf("create %s\n", extractedFolder.c_str());
+					smartCreate(extractedFolder);
+				}
+			}
+			if(i%32==0) {
+				printf("\r number dirs to create: %7d        ", filesHashes.getNumberEntries()-i);
 			}
 		}
+		printf("\r   finished dir creation                                           \n");
 
 		// compress all files
+		printf("- compress changed files to output folder\n");
+
+		std::atomic<int> temporaryFileCounter{0};
+		std::vector<std::future<std::string>> compressResults(filesHashes.getNumberEntries());
+		for(int i=0; i<filesHashes.getNumberEntries(); ++i) {
+			if(compare[i] != FileHashes::CompareResult::eSame) {		//changed or new?
+				compressResults[i] = quickpool::async([&filesHashes](int i) {
+
+					std::string extension = extractFileExtensionFromFilePatch(filesHashes.getEntry(i).mPath);
+					extension = toLower(extension);
+
+					const char* cmdLine[10] = {0};	//to have additional zero elements to mark the end for subprocess
+
+					std::string exe;
+					std::string outputFile;
+					std::string tempFile;
+
+					if((extension.compare("jpg")==0) || (extension.compare("jpeg")==0)) {
+#ifdef _WIN32
+						exe = gConfiguration.toolsFolder + "lepton.exe";
+#else
+						exe = gConfiguration.toolsFolder + "lepton";
+#endif
+						cmdLine[0] = exe.c_str();
+						cmdLine[1] = "-singlethread";
+						cmdLine[2] = "-allowprogressive";
+						cmdLine[3] = filesHashes.getEntry(i).mPath.c_str();
+						outputFile = outputFilename + ".lepton";
+						cmdLine[4] = outputFile.c_str();
+					} else if(extension.compare("mp3")==0) {
+						exe = gConfiguration.toolsFolder + "precomnp-cpp";
+						cmdLine[0] = exe.c_str();
+						cmdLine[1] = "-lt1";
+						cmdLine[2] = "-cn";
+						outputFile = "-o"+outputFilename + ".pcf";
+						cmdLine[3] = outputFile.c_str();
+						tempFile = "-u"+gConfiguration.tempFolder+"/~precomp_temp_" + (temporaryFileCounter++);
+						cmdLine[4] = tempFile.c_str();
+						cmdLine[5] = filesHashes.getEntry(i).mPath.c_str();
+					} else if((extension.compare("png")==0) ||
+							  (extension.compare("pdf")==0) ||
+							  (extension.compare("zip")==0) ||
+							  (extension.compare("gzip")==0) ||
+							  (extension.compare("bzip2")==0) ) {
+						exe = gConfiguration.toolsFolder + "precomnp-cpp";
+						cmdLine[0] = exe.c_str();
+						cmdLine[1] = "-lt1";
+						cmdLine[2] = "-cl";
+						outputFile = "-o"+outputFilename + ".pcf";
+						cmdLine[3] = outputFile.c_str();
+						tempFile = "-u"+gConfiguration.tempFolder+"/~precomp_temp_" + (temporaryFileCounter++);
+						cmdLine[4] = tempFile.c_str();
+						cmdLine[5] = filesHashes.getEntry(i).mPath.c_str();
+					} else {
+						exe = gConfiguration.toolsFolder + "zpaq715";
+						cmdLine[0] = exe.c_str();
+						cmdLine[1] = "a";
+						outputFile = outputFilename + ".zpaq";
+						cmdLine[2] = outputFile.c_str();
+						cmdLine[3] = filesHashes.getEntry(i).mPath.c_str();
+						cmdLine[4] = "-m4";
+						cmdLine[5] = "-t1";
+						// -m5 is dead slow
+						// -m4 is much faster already and still better than lzma2 from precomp-cpp
+						//-rwxr-xr-x 1 devenv root    2036046 Jun 13 15:49 pixelwp2.png*
+						//-rw-rw-r-- 1 devenv devenv 12543751 Jun 13 16:55 pixelwp2.pcf
+						//-rw-rw-r-- 1 devenv devenv  1726904 Jun 13 16:54 pixelwp2.pcf_LZMA
+						//-rw-rw-r-- 1 devenv devenv  1439668 Jun 13 16:56 test.zpaq (-m5) (50sec)
+						//-rw-rw-r-- 1 devenv devenv  1517409 Jun 13 16:59 test.zpaq (-m4) (13sec)
+					}
+					subprocess_s subprocess;
+					int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
+					if(result != 0) {
+						printf("ERROR(1) during compression of file %s\n", filesHashes.getEntry(i).mPath.c_str());
+						exit(-1);
+					}
+					int subprocessReturn;
+					result = subprocess_join(&subprocess, &subprocessReturn);
+					if(result != 0) {
+						printf("ERROR(2) during compression of file %s\n", filesHashes.getEntry(i).mPath.c_str());
+						exit(-1);
+					}
+					if(subprocessReturn != 0) {
+						printf("ERROR(3) during compression of file %s\n", filesHashes.getEntry(i).mPath.c_str());
+						exit(-1);
+					}
+
+					FILE *fp = subprocess_stdout(&subprocess);
+					char tmp[128];
+					if(fp != 0) {
+						fgets(tmp, 128, fp);
+					}
+					subprocess_destroy(&subprocess);
+					return std::string(tmp);
+
+
+
+			}
+			if(i%32==0) {
+				printf("\r number files to process: %7d        ", filesHashes.getNumberEntries()-i);
+			}
+		}
+		printf("\r   finished compression                                           \n");
 
 		// write FileHashes
 
