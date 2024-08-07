@@ -205,7 +205,6 @@ public:
 	enum class CompareResult : uint8_t {
 		eSame, eChanged, eNew
 	};
-
 	std::vector<CompareResult> compareToFileHashes(FileHashes &otherFiles) {
 		std::vector<CompareResult> results;
 		results.reserve(mFileEntries.size());
@@ -223,6 +222,19 @@ public:
 			}
 		}
 		return results;
+	}
+
+	void mergeUpdates(FileHashes &otherFiles) {
+		for(auto &otherEntry : otherFiles.mFileEntries) {
+			int fileIndex = findIndexToFile(otherEntry.mPath);
+			if(fileIndex == -1) {
+				//no found in database, create new entry
+				mFileEntries.push_back(otherEntry);
+			} else {
+				//simply copy data over, regardless if it's a different hash or the same...
+				mFileEntries[fileIndex] = otherEntry;
+			}
+		}
 	}
 
 	struct FileEntry {
@@ -254,6 +266,7 @@ struct Configuration {
 	std::string inputFolder;
 	std::string outputFolder;
 	std::string toolsFolder;
+	std::string temporaryFolder;
 	std::string databaseFilename;
 	std::string unittestPath;
 	FileHashes database;
@@ -313,18 +326,20 @@ int main(int argc, char **argv) {
 		gConfiguration.unittestPath = normalizeDirPath(unittestpath->filename[0]);
 	}
 
+	gConfiguration.temporaryFolder = normalizeDirPath(getTemporaryFolder());
+
 	//dump configuration
 	printf(" BackupSuite - CtrlCenter2\n");
 	printf("-=========================-\n");
-	printf("inputFolder: %s\n", gConfiguration.inputFolder.c_str());
-	printf("outputFolder: %s\n", gConfiguration.outputFolder.c_str());
-	printf("toolsFolder: %s\n", gConfiguration.toolsFolder.c_str());
+	printf("inputFolder:      %s\n", gConfiguration.inputFolder.c_str());
+	printf("outputFolder:     %s\n", gConfiguration.outputFolder.c_str());
+	printf("toolsFolder:      %s\n", gConfiguration.toolsFolder.c_str());
+	printf("temporaryFolder:  %s\n", gConfiguration.temporaryFolder.c_str());
 	printf("databasefilename: %s\n", gConfiguration.databaseFilename.c_str());
-	printf("unittestpath: %s\n", gConfiguration.unittestPath.c_str());
+	printf("unittestpath:     %s\n", gConfiguration.unittestPath.c_str());
 
 	if(verifyFlag->count != 0) {
 		printf("\n*mode: verify archive(compare filelist to uncompressed files in archive)\n");
-
 		goto exitTool;
 	}
 
@@ -338,29 +353,35 @@ int main(int argc, char **argv) {
 	if(createFlag->count != 0) {
 		printf("\n*mode: create new archive\n");
 
+		//try to load database
+		if(gConfiguration.database.readFileHashes(gConfiguration.databaseFilename) == true) {
+			printf("- loaded available database (%d entries)\n", gConfiguration.database.getNumberEntries());
+		} else {
+			printf("- no database found, start with new one\n");
+		}
+
 		// generate list of files to process
 		std::vector<std::string> filesToProcess;
-
 		std::vector<std::string> recursiveFolders;
-
-	    std::function<void(const char *,bool)> callback = [&]( const char *name, bool is_dir ) {
+		uint64_t inputSetSize = 0;
+	    std::function<void(const char *,bool,size_t)> callback = [&]( const char *name, bool is_dir, size_t fileSize ) {
 //	        printf( "%5s %s\n", is_dir ? "<dir>" : "", name );
 	        if( is_dir ) {
 	        	recursiveFolders.push_back(std::string(name));
 	        } else {
 	        	filesToProcess.emplace_back(name);
+	        	inputSetSize += fileSize;
 	        }
 	    };
 
 	    printf("- scan for files\n");
-//    	tinydir( "/home/devenv/BackupSuite/", callback );
-
     	recursiveFolders.push_back(gConfiguration.inputFolder);
     	while(recursiveFolders.size() != 0) {
     		std::string dir = recursiveFolders.back() + "/";
     		recursiveFolders.pop_back();
     		tinydir(dir.c_str(), callback);
     	}
+    	printf("   found %lu files (%s / %lu bytes)\n", filesToProcess.size(), humanize(inputSetSize).c_str(), inputSetSize);
 
     	printf("- generate hashes for all input files\n");
     	std::vector<std::future<std::string>> results(filesToProcess.size());
@@ -399,10 +420,10 @@ int main(int argc, char **argv) {
     		}, i);
     	}
     	while(!quickpool::done()) {
+    		printf("\r number files to hash: %7d         ", quickpool::number_open_tasks());
     		quickpool::wait(10);
-    		printf("\r number open jobs: %7d         ", quickpool::number_open_tasks());
     	}
-    	printf("\r  finished jobs                              \n");
+    	printf("\r   finished hashing                              \n");
 
     	FileHashes filesHashes;
     	for(int i=0; i<results.size(); ++i) {
@@ -443,9 +464,11 @@ int main(int argc, char **argv) {
 		std::vector<std::future<std::string>> compressResults(filesHashes.getNumberEntries());
 		for(int i=0; i<filesHashes.getNumberEntries(); ++i) {
 			if(compare[i] != FileHashes::CompareResult::eSame) {		//changed or new?
-				compressResults[i] = quickpool::async([&filesHashes](int i) {
+				compressResults[i] = quickpool::async([&](int i) {
+					const std::string &inputFilename = filesHashes.getEntry(i).mPath;
+					std::string outputFilename = gConfiguration.outputFolder + inputFilename;
 
-					std::string extension = extractFileExtensionFromFilePatch(filesHashes.getEntry(i).mPath);
+					std::string extension = extractFileExtensionFromFilePatch(inputFilename);
 					extension = toLower(extension);
 
 					const char* cmdLine[10] = {0};	//to have additional zero elements to mark the end for subprocess
@@ -463,7 +486,7 @@ int main(int argc, char **argv) {
 						cmdLine[0] = exe.c_str();
 						cmdLine[1] = "-singlethread";
 						cmdLine[2] = "-allowprogressive";
-						cmdLine[3] = filesHashes.getEntry(i).mPath.c_str();
+						cmdLine[3] = inputFilename.c_str();
 						outputFile = outputFilename + ".lepton";
 						cmdLine[4] = outputFile.c_str();
 					} else if(extension.compare("mp3")==0) {
@@ -473,9 +496,9 @@ int main(int argc, char **argv) {
 						cmdLine[2] = "-cn";
 						outputFile = "-o"+outputFilename + ".pcf";
 						cmdLine[3] = outputFile.c_str();
-						tempFile = "-u"+gConfiguration.tempFolder+"/~precomp_temp_" + (temporaryFileCounter++);
+						tempFile = "-u"+gConfiguration.temporaryFolder+"/~precomp_temp_" + std::to_string((temporaryFileCounter++));
 						cmdLine[4] = tempFile.c_str();
-						cmdLine[5] = filesHashes.getEntry(i).mPath.c_str();
+						cmdLine[5] = inputFilename.c_str();
 					} else if((extension.compare("png")==0) ||
 							  (extension.compare("pdf")==0) ||
 							  (extension.compare("zip")==0) ||
@@ -487,16 +510,16 @@ int main(int argc, char **argv) {
 						cmdLine[2] = "-cl";
 						outputFile = "-o"+outputFilename + ".pcf";
 						cmdLine[3] = outputFile.c_str();
-						tempFile = "-u"+gConfiguration.tempFolder+"/~precomp_temp_" + (temporaryFileCounter++);
+						tempFile = "-u"+gConfiguration.temporaryFolder+"/~precomp_temp_" + std::to_string((temporaryFileCounter++));
 						cmdLine[4] = tempFile.c_str();
-						cmdLine[5] = filesHashes.getEntry(i).mPath.c_str();
+						cmdLine[5] = inputFilename.c_str();
 					} else {
 						exe = gConfiguration.toolsFolder + "zpaq715";
 						cmdLine[0] = exe.c_str();
 						cmdLine[1] = "a";
 						outputFile = outputFilename + ".zpaq";
 						cmdLine[2] = outputFile.c_str();
-						cmdLine[3] = filesHashes.getEntry(i).mPath.c_str();
+						cmdLine[3] = inputFilename.c_str();
 						cmdLine[4] = "-m4";
 						cmdLine[5] = "-t1";
 						// -m5 is dead slow
@@ -507,21 +530,33 @@ int main(int argc, char **argv) {
 						//-rw-rw-r-- 1 devenv devenv  1439668 Jun 13 16:56 test.zpaq (-m5) (50sec)
 						//-rw-rw-r-- 1 devenv devenv  1517409 Jun 13 16:59 test.zpaq (-m4) (13sec)
 					}
+
+#if 0
+					int j=0;
+					while(cmdLine[j] != nullptr) {
+						printf("%s ", cmdLine[j]);
+						++j;
+					}
+					printf("\n");
+#endif
+
 					subprocess_s subprocess;
 					int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
 					if(result != 0) {
-						printf("ERROR(1) during compression of file %s\n", filesHashes.getEntry(i).mPath.c_str());
+						printf("ERROR(1) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
 						exit(-1);
 					}
 					int subprocessReturn;
 					result = subprocess_join(&subprocess, &subprocessReturn);
 					if(result != 0) {
-						printf("ERROR(2) during compression of file %s\n", filesHashes.getEntry(i).mPath.c_str());
+						printf("ERROR(2) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
 						exit(-1);
 					}
 					if(subprocessReturn != 0) {
-						printf("ERROR(3) during compression of file %s\n", filesHashes.getEntry(i).mPath.c_str());
-						exit(-1);
+						printf("ERROR(3) during compression of file %s(return %d)\n", inputFilename.c_str(), subprocessReturn);
+
+//TODO: copy file without compression if there was an error!
+
 					}
 
 					FILE *fp = subprocess_stdout(&subprocess);
@@ -531,18 +566,49 @@ int main(int argc, char **argv) {
 					}
 					subprocess_destroy(&subprocess);
 					return std::string(tmp);
-
-
-
+				}, i);
 			}
-			if(i%32==0) {
-				printf("\r number files to process: %7d        ", filesHashes.getNumberEntries()-i);
-			}
+		}
+		while(!quickpool::done()) {
+			printf("\r number files to process: %7d        ", quickpool::number_open_tasks());
+			quickpool::wait(10);
 		}
 		printf("\r   finished compression                                           \n");
 
-		// write FileHashes
+		//get output statistics
+		uint64_t outputSetSize = 0;
+	    std::function<void(const char *,bool,size_t)> callbackSizeCalc = [&]( const char *name, bool is_dir, size_t fileSize ) {
+	        if( is_dir ) {
+	        	recursiveFolders.push_back(std::string(name));
+	        } else {
+	        	outputSetSize += fileSize;
+	        }
+	    };
 
+	    printf("- scan for outputfiles\n");
+    	recursiveFolders.push_back(gConfiguration.outputFolder);
+    	while(recursiveFolders.size() != 0) {
+    		std::string dir = recursiveFolders.back() + "/";
+    		recursiveFolders.pop_back();
+    		tinydir(dir.c_str(), callbackSizeCalc);
+    	}
+    	printf("   found %lu files (%s / %lu bytes)\n", filesToProcess.size(), humanize(outputSetSize).c_str(), outputSetSize);
+
+
+		// write FileHashes
+		printf("- writing filehashes.txt\n");
+		std::string filehashesName = gConfiguration.outputFolder + "filehashes.txt";
+		filesHashes.saveFileHashes(filehashesName);
+
+		// merge filehashes into database
+		gConfiguration.database.mergeUpdates(filesHashes);
+
+		// write final database
+		printf("- writing new database file\n");
+		gConfiguration.database.mergeUpdates(filesHashes);
+		if(gConfiguration.database.saveFileHashes(gConfiguration.databaseFilename) == false) {
+			printf("ERROR during writing database file!\n");
+		}
 
 	} else if(mergeFlag->count != 0) {
 		printf("\n*mode: merge old filelist to FileHashes\n");

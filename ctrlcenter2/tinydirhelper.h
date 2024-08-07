@@ -75,3 +75,29 @@ bool smartCreate(std::string directory) {			//string has to end with "/"!
 	}
 	return true;
 }
+
+static std::string getEnvVar(std::string const &key) {
+	char *val = getenv(key.c_str());
+	if(val == nullptr) {
+		return std::string("");
+	} else {
+		return std::string(val);
+	}
+}
+
+std::string getTemporaryFolder() {
+#ifdef _WIN32
+	WCHAR tempPath[MAX_PATH+1];
+	::GetTempPath(MAX_PATH, &tempPath[0]);
+	return std::string(tempPath);
+#else
+	std::string path;
+	path = getEnvVar("TMPDIR");	if(path.length() != 0) { return path; }
+	path = getEnvVar("TMP");	if(path.length() != 0) { return path; }
+	path = getEnvVar("TEMP");	if(path.length() != 0) { return path; }
+	path = getEnvVar("TEMPDIR");	if(path.length() != 0) { return path; }
+
+	path = "/tmp";			// or "/data/local/tmp" on android
+	return path;
+#endif
+}

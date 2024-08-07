@@ -23,7 +23,10 @@ bool tinydir( const char *directory, const FN &yield ) {
     for( HANDLE h = FindFirstFileA( (src + "/*").c_str(), &fdata ); h != INVALID_HANDLE_VALUE; ) {
         for( bool next = true; next; next = FindNextFileA( h, &fdata ) != 0 ) {
             if( fdata.cFileName[0] != '.' ) {
-                yield( (src + "/" + fdata.cFileName).c_str(), (fdata.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) > 0 );
+                size_t fileSize = (size_t)fdata.nFileSizeLow;
+                if(sizeof(size_t) >= sizeof(uint64_t))
+                    fileSize |= (size_t)((uint64_t)fdata.nFileSizeHigh << (uint64_t)32);
+                yield( (src + "/" + fdata.cFileName).c_str(), (fdata.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) > 0,  fileSize);
             }
         }
         return FindClose( h ), true;
@@ -49,7 +52,7 @@ bool tinydir( const char *directory, const FN &yield ) {
                 isDir = true;
             }
 //            printf("process %s (%s)\n", (src+"/"+ep->d_name).c_str(), isDir?"true":"false");
-            yield( (src + "/" + ep->d_name).c_str(), isDir );
+            yield( (src + "/" + ep->d_name).c_str(), isDir, st.st_size );
         }
         return closedir( dir ), true;
     }
