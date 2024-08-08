@@ -156,6 +156,12 @@ public:
 
 		parseBuffer(fileBuffer, fileSize);
 
+		if(gConfiguration.unittestPath.length() != 0) {
+			for(int i=0; i<mFileEntries.size(); ++i) {
+				mFileEntries[i].mPath = gConfiguration.unittestPath + mFileEntries[i].mPath;
+			}
+		}
+
 		delete[] fileBuffer;
 		return true;
 	}
@@ -166,7 +172,14 @@ public:
 		}
 		for(int i=0; i<mFileEntries.size(); ++i) {
 			FileEntry &entry = mFileEntries[i];
-			fprintf(fp, "%s %s %s\n", entry.mHashFunc.c_str(), entry.mHashValue.c_str(), entry.mPath.c_str());
+			std::string filename = entry.mPath;
+			if(gConfiguration.unittestPath.length() != 0) {
+				size_t pos = filename.find(gConfiguration.unittestPath);
+				if(pos != std::string::npos)
+					filename = filename.erase(pos, gConfiguration.unittestPath.length());
+			}
+			filename.
+			fprintf(fp, "%s %s %s\n", entry.mHashFunc.c_str(), entry.mHashValue.c_str(), .c_str());
 		}
 		fclose(fp);
 		return true;
