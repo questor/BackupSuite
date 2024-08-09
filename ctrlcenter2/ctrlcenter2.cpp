@@ -17,6 +17,7 @@
 #include "quickpool.h"
 #include "concurrentqueue/concurrentqueue.h"
 
+
 // utils ===========================================================================================
 
 std::string replaceAll(std::string &input, std::string searchFor, std::string replaceBy) {
@@ -136,54 +137,8 @@ const char *skipNonNewline(const char *ptr) {
 // FileHashes ===========================================================================================
 class FileHashes {
 public:
-	bool readFileHashes(const std::string &filePath) {
-		mFileEntries.clear();
-		mFileEntries.reserve(10000);	//to start with some higher value...
-
-		FILE *fp = fopen(filePath.c_str(), "r");
-		if(fp == 0) {
-			return false;
-		}
-		fseek(fp, 0, SEEK_END);
-		int fileSize = ftell(fp);
-		fseek(fp, 0, SEEK_SET);
-		char *fileBuffer = new char[fileSize+10];
-		int alreadyReadBytes = 0;
-		while(alreadyReadBytes < fileSize) {
-			alreadyReadBytes += fread(fileBuffer+alreadyReadBytes, 1, fileSize-alreadyReadBytes, fp);
-		}
-		fclose(fp);
-
-		parseBuffer(fileBuffer, fileSize);
-
-		if(gConfiguration.unittestPath.length() != 0) {
-			for(int i=0; i<mFileEntries.size(); ++i) {
-				mFileEntries[i].mPath = gConfiguration.unittestPath + mFileEntries[i].mPath;
-			}
-		}
-
-		delete[] fileBuffer;
-		return true;
-	}
-	bool saveFileHashes(const std::string &filePath) {
-		FILE *fp = fopen(filePath.c_str(), "w");
-		if(fp == 0) {
-			return false;
-		}
-		for(int i=0; i<mFileEntries.size(); ++i) {
-			FileEntry &entry = mFileEntries[i];
-			std::string filename = entry.mPath;
-			if(gConfiguration.unittestPath.length() != 0) {
-				size_t pos = filename.find(gConfiguration.unittestPath);
-				if(pos != std::string::npos)
-					filename = filename.erase(pos, gConfiguration.unittestPath.length());
-			}
-			filename.
-			fprintf(fp, "%s %s %s\n", entry.mHashFunc.c_str(), entry.mHashValue.c_str(), .c_str());
-		}
-		fclose(fp);
-		return true;
-	}
+	bool readFileHashes(const std::string &filePath);
+	bool saveFileHashes(const std::string &filePath);
 
 	int getNumberEntries() {
 		return mFileEntries.size();
@@ -201,7 +156,7 @@ public:
 			std::string hashValue(startToken, readCursor-startToken);
 
 			startToken = skipWhitespace(readCursor);
-			readCursor = skipNonWhitespace(startToken);
+			readCursor = skipNonNewline(startToken);
 			std::string filePath(startToken, readCursor-startToken);
 
 			FileEntry entry;
@@ -284,6 +239,55 @@ struct Configuration {
 	std::string unittestPath;
 	FileHashes database;
 } gConfiguration;
+
+bool FileHashes::readFileHashes(const std::string &filePath) {
+	mFileEntries.clear();
+	mFileEntries.reserve(10000);	//to start with some higher value...
+
+	FILE *fp = fopen(filePath.c_str(), "r");
+	if(fp == 0) {
+		return false;
+	}
+	fseek(fp, 0, SEEK_END);
+	int fileSize = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	char *fileBuffer = new char[fileSize+10];
+	int alreadyReadBytes = 0;
+	while(alreadyReadBytes < fileSize) {
+		alreadyReadBytes += fread(fileBuffer+alreadyReadBytes, 1, fileSize-alreadyReadBytes, fp);
+	}
+	fclose(fp);
+
+	parseBuffer(fileBuffer, fileSize);
+
+	if(gConfiguration.unittestPath.length() != 0) {
+		for(int i=0; i<mFileEntries.size(); ++i) {
+			mFileEntries[i].mPath = gConfiguration.unittestPath + mFileEntries[i].mPath;
+		}
+	}
+
+	delete[] fileBuffer;
+	return true;
+}
+bool FileHashes::saveFileHashes(const std::string &filePath) {
+	FILE *fp = fopen(filePath.c_str(), "w");
+	if(fp == 0) {
+		return false;
+	}
+	for(int i=0; i<mFileEntries.size(); ++i) {
+		FileEntry &entry = mFileEntries[i];
+		std::string filename = entry.mPath;
+		if(gConfiguration.unittestPath.length() != 0) {
+			size_t pos = filename.find(gConfiguration.unittestPath);
+			if(pos != std::string::npos)
+				filename = filename.erase(pos, gConfiguration.unittestPath.length());
+		}
+		fprintf(fp, "%s %s %s\n", entry.mHashFunc.c_str(), entry.mHashValue.c_str(), filename.c_str());
+	}
+	fclose(fp);
+	return true;
+}
+
 
 // main ============================================================================================
 
