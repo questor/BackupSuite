@@ -238,6 +238,7 @@ struct Configuration {
 	std::string databaseFilename;
 	std::string unittestPath;
 	FileHashes database;
+	bool dryRunFlag;
 } gConfiguration;
 
 bool FileHashes::readFileHashes(const std::string &filePath) {
@@ -301,10 +302,11 @@ int main(int argc, char **argv) {
 	arg_lit *verifyFlag = arg_lit0("v", "verify", "verify compressed structure");
 	arg_lit *mergeFlag = arg_lit0("m", "merge", "merge hashfile to FileHashes");
 	arg_file *unittestpath = arg_file0("u", "unittestpath", "<dir>", "directory which is NOT stored as part of the backup(used in unittests");
+	arg_lit *dryFlag = arg_lit0("", "dryrun", "only do dryrun, don't compress anything");
 	struct arg_end *end = arg_end(20);	//store up to 20 errors
 
 	void *argtable[] = {helpFlag, inputDir, outputDir, tools, databaseFilename,
-					createFlag, verifyFlag, mergeFlag, unittestpath, end};
+					createFlag, verifyFlag, mergeFlag, unittestpath, dryFlag, end};
 
 	int exitCode = 0;
 	char toolName[] = "ctrlcenter2";
@@ -345,6 +347,12 @@ int main(int argc, char **argv) {
 
 	gConfiguration.temporaryFolder = normalizeDirPath(getTemporaryFolder());
 
+	if(dryFlag->count != 0) {
+		gConfiguration.dryRunFlag = true;
+	} else {
+		gConfiguration.dryRunFlag = false;
+	}
+
 	//dump configuration
 	printf(" BackupSuite - CtrlCenter2\n");
 	printf("-=========================-\n");
@@ -354,6 +362,7 @@ int main(int argc, char **argv) {
 	printf("temporaryFolder:  %s\n", gConfiguration.temporaryFolder.c_str());
 	printf("databasefilename: %s\n", gConfiguration.databaseFilename.c_str());
 	printf("unittestpath:     %s\n", gConfiguration.unittestPath.c_str());
+	printf("dryrun:           %s\n", gConfiguration.dryRunFlag?"true":"false");
 
 	if(verifyFlag->count != 0) {
 		printf("\n*mode: verify archive(compare filelist to uncompressed files in archive)\n");
@@ -436,7 +445,7 @@ int main(int argc, char **argv) {
     			return std::string(tmp);
     		}, i);
     	}
-    	while(!quickpool::done()) {
+       	while(!quickpool::done()) {
     		printf("\r number files to hash: %7d         ", quickpool::number_open_tasks());
     		quickpool::wait(10);
     	}
@@ -462,10 +471,20 @@ int main(int argc, char **argv) {
 				if(cachedDir.compare(extractedFolder) != 0) {
 					cachedDir = extractedFolder;
 
+					if(gConfiguration.unittestPath.length() != 0) {
+						size_t pos = extractedFolder.find(gConfiguration.unittestPath);
+						if(pos != std::string::npos)
+							extractedFolder = extractedFolder.erase(pos, gConfiguration.unittestPath.length());
+					}
+
 					extractedFolder = gConfiguration.outputFolder + extractedFolder;
 
 //					printf("create %s\n", extractedFolder.c_str());
-					smartCreate(extractedFolder);
+					if(gConfiguration.dryRunFlag) {
+						printf("would now create dir %s\n", extractedFolder.c_str());
+					} else {
+						smartCreate(extractedFolder);
+					}
 				}
 			}
 			if(i%32==0) {
@@ -483,7 +502,15 @@ int main(int argc, char **argv) {
 			if(compare[i] != FileHashes::CompareResult::eSame) {		//changed or new?
 				compressResults[i] = quickpool::async([&](int i) {
 					const std::string &inputFilename = filesHashes.getEntry(i).mPath;
-					std::string outputFilename = gConfiguration.outputFolder + inputFilename;
+
+					std::string outputFilename = inputFilename;
+					if(gConfiguration.unittestPath.length() != 0) {
+						size_t pos = outputFilename.find(gConfiguration.unittestPath);
+						if(pos != std::string::npos)
+							outputFilename = outputFilename.erase(pos, gConfiguration.unittestPath.length());
+					}
+
+					outputFilename = gConfiguration.outputFolder + outputFilename;
 
 					std::string extension = extractFileExtensionFromFilePatch(inputFilename);
 					extension = toLower(extension);
@@ -548,46 +575,47 @@ int main(int argc, char **argv) {
 						//-rw-rw-r-- 1 devenv devenv  1517409 Jun 13 16:59 test.zpaq (-m4) (13sec)
 					}
 
-#if 0
-					int j=0;
-					while(cmdLine[j] != nullptr) {
-						printf("%s ", cmdLine[j]);
-						++j;
-					}
-					printf("\n");
-#endif
-
-					subprocess_s subprocess;
-					int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
-					if(result != 0) {
-						printf("ERROR(1) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
-						exit(-1);
-					}
-					int subprocessReturn;
-					result = subprocess_join(&subprocess, &subprocessReturn);
-					if(result != 0) {
-						printf("ERROR(2) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
-						exit(-1);
-					}
-					if(subprocessReturn != 0) {
-						printf("ERROR(3) during compression of file %s(return %d)\n", inputFilename.c_str(), subprocessReturn);
-
-//TODO: copy file without compression if there was an error!
-
-					}
-
-					FILE *fp = subprocess_stdout(&subprocess);
 					char tmp[128];
-					if(fp != 0) {
-						fgets(tmp, 128, fp);
+					if(gConfiguration.dryRunFlag) {
+						printf("would start ");
+						int j=0;
+						while(cmdLine[j] != nullptr) {
+							printf("%s ", cmdLine[j]);
+							++j;
+						}
+						printf("\n");
+					} else {
+						subprocess_s subprocess;
+						int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
+						if(result != 0) {
+							printf("ERROR(1) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
+							exit(-1);
+						}
+						int subprocessReturn;
+						result = subprocess_join(&subprocess, &subprocessReturn);
+						if(result != 0) {
+							printf("ERROR(2) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
+							exit(-1);
+						}
+						if(subprocessReturn != 0) {
+							printf("ERROR(3) during compression of file %s(return %d)\n", inputFilename.c_str(), subprocessReturn);
+
+	//TODO: copy file without compression if there was an error!
+						}
+
+						FILE *fp = subprocess_stdout(&subprocess);
+						if(fp != 0) {
+							fgets(tmp, 128, fp);
+						}
+						subprocess_destroy(&subprocess);
 					}
-					subprocess_destroy(&subprocess);
 					return std::string(tmp);
 				}, i);
 			}
 		}
 		while(!quickpool::done()) {
-			printf("\r number files to process: %7d        ", quickpool::number_open_tasks());
+       		if(!gConfiguration.dryRunFlag)
+				printf("\r number files to process: %7d        ", quickpool::number_open_tasks());
 			quickpool::wait(10);
 		}
 		printf("\r   finished compression                                           \n");
@@ -614,19 +642,26 @@ int main(int argc, char **argv) {
 
 		// write FileHashes
 		printf("- writing filehashes.txt\n");
-		std::string filehashesName = gConfiguration.outputFolder + "filehashes.txt";
-		filesHashes.saveFileHashes(filehashesName);
+		if(gConfiguration.dryRunFlag) {
+			printf("would now write filehash.txt to output folder\n");
+		} else {
+			std::string filehashesName = gConfiguration.outputFolder + "filehashes.txt";
+			filesHashes.saveFileHashes(filehashesName);
+		}
 
 		// merge filehashes into database
 		gConfiguration.database.mergeUpdates(filesHashes);
 
 		// write final database
 		printf("- writing new database file\n");
-		gConfiguration.database.mergeUpdates(filesHashes);
-		if(gConfiguration.database.saveFileHashes(gConfiguration.databaseFilename) == false) {
-			printf("ERROR during writing database file!\n");
+		if(gConfiguration.dryRunFlag) {
+			printf("would now write new database\n");
+		} else {
+			gConfiguration.database.mergeUpdates(filesHashes);
+			if(gConfiguration.database.saveFileHashes(gConfiguration.databaseFilename) == false) {
+				printf("ERROR during writing database file!\n");
+			}
 		}
-
 	} else if(mergeFlag->count != 0) {
 		printf("\n*mode: merge old filelist to FileHashes\n");
 
