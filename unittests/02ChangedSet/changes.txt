@@ -1,5 +1,6 @@
 - added 10textfile.txt
 - added 11textfile.txt
+- added Folder/01textfile.txt
 - added changes.txt
 - deleted 02textfile.txt
 - changed 01textfile.txt

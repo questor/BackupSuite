@@ -8,8 +8,10 @@
 -----------------------
 - added 20textfile.txt
 - added 21textfile.txt
+- added Folder/random.txt
 - changed changes.txt
 - deleted 01textfile.txt
 - deleted 05textfile.txt
+- deleted Folder with Spaces and content
 - changed 10textfile.txt
 - changed 03textfile.txt
