@@ -289,6 +289,147 @@ bool FileHashes::saveFileHashes(const std::string &filePath) {
 	return true;
 }
 
+std::string hashFile(std::string fileToProcess) {
+	std::string executable = gConfiguration.toolsFolder + "meowhash";
+
+	const char *cmdLine[] = {executable.c_str(), fileToProcess.c_str(), "--nologo", nullptr};
+	subprocess_s subprocess;
+	int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
+	if(result != 0) {
+		printf("ERROR(1) during hashing of file %s\n", fileToProcess.c_str());
+		exit(-1);
+	}
+	int subprocessReturn;
+	result = subprocess_join(&subprocess, &subprocessReturn);
+	if(result != 0) {
+		printf("ERROR(2) during hashing of file %s\n", fileToProcess.c_str());
+		exit(-1);
+	}
+	if(subprocessReturn != 0) {
+		printf("ERROR(3) during hashing of file %s\n", fileToProcess.c_str());
+		exit(-1);
+	}
+
+	FILE *fp = subprocess_stdout(&subprocess);
+	char tmp[128];
+	if(fp != 0) {
+		fgets(tmp, 128, fp);
+	}
+	subprocess_destroy(&subprocess);
+
+	return std::string(tmp);
+}
+
+std::string compressFile(std::string inputFilename, int tempCounter) {
+	std::string outputFilename = inputFilename;
+	if(gConfiguration.unittestPath.length() != 0) {
+		size_t pos = outputFilename.find(gConfiguration.unittestPath);
+		if(pos != std::string::npos)
+			outputFilename = outputFilename.erase(pos, gConfiguration.unittestPath.length());
+	}
+
+	outputFilename = gConfiguration.outputFolder + outputFilename;
+
+	std::string extension = extractFileExtensionFromFilePatch(inputFilename);
+	extension = toLower(extension);
+
+	const char* cmdLine[10] = {0};	//to have additional zero elements to mark the end for subprocess
+
+	std::string exe;
+	std::string outputFile;
+	std::string tempFile;
+
+	if((extension.compare("jpg")==0) || (extension.compare("jpeg")==0)) {
+#ifdef _WIN32
+		exe = gConfiguration.toolsFolder + "lepton.exe";
+#else
+		exe = gConfiguration.toolsFolder + "lepton";
+#endif
+		cmdLine[0] = exe.c_str();
+		cmdLine[1] = "-singlethread";
+		cmdLine[2] = "-allowprogressive";
+		cmdLine[3] = inputFilename.c_str();
+		outputFile = outputFilename + ".lepton";
+		cmdLine[4] = outputFile.c_str();
+	} else if(extension.compare("mp3")==0) {
+		exe = gConfiguration.toolsFolder + "precomnp-cpp";
+		cmdLine[0] = exe.c_str();
+		cmdLine[1] = "-lt1";
+		cmdLine[2] = "-cn";
+		outputFile = "-o"+outputFilename + ".pcf";
+		cmdLine[3] = outputFile.c_str();
+		tempFile = "-u"+gConfiguration.temporaryFolder+"/~precomp_temp_" + std::to_string(tempCounter);
+		cmdLine[4] = tempFile.c_str();
+		cmdLine[5] = inputFilename.c_str();
+	} else if((extension.compare("png")==0) ||
+			  (extension.compare("pdf")==0) ||
+			  (extension.compare("zip")==0) ||
+			  (extension.compare("gzip")==0) ||
+			  (extension.compare("bzip2")==0) ) {
+		exe = gConfiguration.toolsFolder + "precomnp-cpp";
+		cmdLine[0] = exe.c_str();
+		cmdLine[1] = "-lt1";
+		cmdLine[2] = "-cl";
+		outputFile = "-o"+outputFilename + ".pcf";
+		cmdLine[3] = outputFile.c_str();
+		tempFile = "-u"+gConfiguration.temporaryFolder+"/~precomp_temp_" + std::to_string(tempCounter);
+		cmdLine[4] = tempFile.c_str();
+		cmdLine[5] = inputFilename.c_str();
+	} else {
+		exe = gConfiguration.toolsFolder + "zpaq715";
+		cmdLine[0] = exe.c_str();
+		cmdLine[1] = "a";
+		outputFile = outputFilename + ".zpaq";
+		cmdLine[2] = outputFile.c_str();
+		cmdLine[3] = inputFilename.c_str();
+		cmdLine[4] = "-m4";
+		cmdLine[5] = "-t1";
+		// -m5 is dead slow
+		// -m4 is much faster already and still better than lzma2 from precomp-cpp
+		//-rwxr-xr-x 1 devenv root    2036046 Jun 13 15:49 pixelwp2.png*
+		//-rw-rw-r-- 1 devenv devenv 12543751 Jun 13 16:55 pixelwp2.pcf
+		//-rw-rw-r-- 1 devenv devenv  1726904 Jun 13 16:54 pixelwp2.pcf_LZMA
+		//-rw-rw-r-- 1 devenv devenv  1439668 Jun 13 16:56 test.zpaq (-m5) (50sec)
+		//-rw-rw-r-- 1 devenv devenv  1517409 Jun 13 16:59 test.zpaq (-m4) (13sec)
+	}
+
+	char tmp[128];
+	if(gConfiguration.dryRunFlag) {
+		printf("would start ");
+		int j=0;
+		while(cmdLine[j] != nullptr) {
+			printf("%s ", cmdLine[j]);
+			++j;
+		}
+		printf("\n");
+	} else {
+		subprocess_s subprocess;
+		int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
+		if(result != 0) {
+			printf("ERROR(1) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
+			exit(-1);
+		}
+		int subprocessReturn;
+		result = subprocess_join(&subprocess, &subprocessReturn);
+		if(result != 0) {
+			printf("ERROR(2) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
+			exit(-1);
+		}
+		if(subprocessReturn != 0) {
+			printf("ERROR(3) during compression of file %s(return %d)\n", inputFilename.c_str(), subprocessReturn);
+
+//TODO: copy file without compression if there was an error!
+		}
+
+		FILE *fp = subprocess_stdout(&subprocess);
+		if(fp != 0) {
+			fgets(tmp, 128, fp);
+		}
+		subprocess_destroy(&subprocess);
+	}
+	return std::string(tmp);
+
+}
 
 // main ============================================================================================
 
@@ -412,38 +553,9 @@ int main(int argc, char **argv) {
     	printf("- generate hashes for all input files\n");
     	std::vector<std::future<std::string>> results(filesToProcess.size());
     	for(int i=0; i<filesToProcess.size(); ++i) {
-    		results[i] = quickpool::async([&filesToProcess](int i) {
-    			std::string &fileToProcess = filesToProcess[i];
-
-    			std::string executable = gConfiguration.toolsFolder + "meowhash";
-
-    			const char *cmdLine[] = {executable.c_str(), fileToProcess.c_str(), "--nologo", nullptr};
-    			subprocess_s subprocess;
-    			int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
-    			if(result != 0) {
-    				printf("ERROR(1) during hashing of file %s\n", fileToProcess.c_str());
-    				exit(-1);
-    			}
-    			int subprocessReturn;
-    			result = subprocess_join(&subprocess, &subprocessReturn);
-    			if(result != 0) {
-    				printf("ERROR(2) during hashing of file %s\n", fileToProcess.c_str());
-    				exit(-1);
-    			}
-    			if(subprocessReturn != 0) {
-    				printf("ERROR(3) during hashing of file %s\n", fileToProcess.c_str());
-    				exit(-1);
-    			}
-
-    			FILE *fp = subprocess_stdout(&subprocess);
-    			char tmp[128];
-    			if(fp != 0) {
-	    			fgets(tmp, 128, fp);
-    			}
-    			subprocess_destroy(&subprocess);
-
-    			return std::string(tmp);
-    		}, i);
+    		results[i] = quickpool::async([&]() {
+    			return hashFile(filesToProcess[i]);
+    		});
     	}
        	while(!quickpool::done()) {
     		printf("\r number files to hash: %7d         ", quickpool::number_open_tasks());
@@ -500,117 +612,11 @@ int main(int argc, char **argv) {
 		std::vector<std::future<std::string>> compressResults(filesHashes.getNumberEntries());
 		for(int i=0; i<filesHashes.getNumberEntries(); ++i) {
 			if(compare[i] != FileHashes::CompareResult::eSame) {		//changed or new?
-				compressResults[i] = quickpool::async([&](int i) {
+				compressResults[i] = quickpool::async([&]() {
 					const std::string &inputFilename = filesHashes.getEntry(i).mPath;
-
-					std::string outputFilename = inputFilename;
-					if(gConfiguration.unittestPath.length() != 0) {
-						size_t pos = outputFilename.find(gConfiguration.unittestPath);
-						if(pos != std::string::npos)
-							outputFilename = outputFilename.erase(pos, gConfiguration.unittestPath.length());
-					}
-
-					outputFilename = gConfiguration.outputFolder + outputFilename;
-
-					std::string extension = extractFileExtensionFromFilePatch(inputFilename);
-					extension = toLower(extension);
-
-					const char* cmdLine[10] = {0};	//to have additional zero elements to mark the end for subprocess
-
-					std::string exe;
-					std::string outputFile;
-					std::string tempFile;
-
-					if((extension.compare("jpg")==0) || (extension.compare("jpeg")==0)) {
-#ifdef _WIN32
-						exe = gConfiguration.toolsFolder + "lepton.exe";
-#else
-						exe = gConfiguration.toolsFolder + "lepton";
-#endif
-						cmdLine[0] = exe.c_str();
-						cmdLine[1] = "-singlethread";
-						cmdLine[2] = "-allowprogressive";
-						cmdLine[3] = inputFilename.c_str();
-						outputFile = outputFilename + ".lepton";
-						cmdLine[4] = outputFile.c_str();
-					} else if(extension.compare("mp3")==0) {
-						exe = gConfiguration.toolsFolder + "precomnp-cpp";
-						cmdLine[0] = exe.c_str();
-						cmdLine[1] = "-lt1";
-						cmdLine[2] = "-cn";
-						outputFile = "-o"+outputFilename + ".pcf";
-						cmdLine[3] = outputFile.c_str();
-						tempFile = "-u"+gConfiguration.temporaryFolder+"/~precomp_temp_" + std::to_string((temporaryFileCounter++));
-						cmdLine[4] = tempFile.c_str();
-						cmdLine[5] = inputFilename.c_str();
-					} else if((extension.compare("png")==0) ||
-							  (extension.compare("pdf")==0) ||
-							  (extension.compare("zip")==0) ||
-							  (extension.compare("gzip")==0) ||
-							  (extension.compare("bzip2")==0) ) {
-						exe = gConfiguration.toolsFolder + "precomnp-cpp";
-						cmdLine[0] = exe.c_str();
-						cmdLine[1] = "-lt1";
-						cmdLine[2] = "-cl";
-						outputFile = "-o"+outputFilename + ".pcf";
-						cmdLine[3] = outputFile.c_str();
-						tempFile = "-u"+gConfiguration.temporaryFolder+"/~precomp_temp_" + std::to_string((temporaryFileCounter++));
-						cmdLine[4] = tempFile.c_str();
-						cmdLine[5] = inputFilename.c_str();
-					} else {
-						exe = gConfiguration.toolsFolder + "zpaq715";
-						cmdLine[0] = exe.c_str();
-						cmdLine[1] = "a";
-						outputFile = outputFilename + ".zpaq";
-						cmdLine[2] = outputFile.c_str();
-						cmdLine[3] = inputFilename.c_str();
-						cmdLine[4] = "-m4";
-						cmdLine[5] = "-t1";
-						// -m5 is dead slow
-						// -m4 is much faster already and still better than lzma2 from precomp-cpp
-						//-rwxr-xr-x 1 devenv root    2036046 Jun 13 15:49 pixelwp2.png*
-						//-rw-rw-r-- 1 devenv devenv 12543751 Jun 13 16:55 pixelwp2.pcf
-						//-rw-rw-r-- 1 devenv devenv  1726904 Jun 13 16:54 pixelwp2.pcf_LZMA
-						//-rw-rw-r-- 1 devenv devenv  1439668 Jun 13 16:56 test.zpaq (-m5) (50sec)
-						//-rw-rw-r-- 1 devenv devenv  1517409 Jun 13 16:59 test.zpaq (-m4) (13sec)
-					}
-
-					char tmp[128];
-					if(gConfiguration.dryRunFlag) {
-						printf("would start ");
-						int j=0;
-						while(cmdLine[j] != nullptr) {
-							printf("%s ", cmdLine[j]);
-							++j;
-						}
-						printf("\n");
-					} else {
-						subprocess_s subprocess;
-						int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
-						if(result != 0) {
-							printf("ERROR(1) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
-							exit(-1);
-						}
-						int subprocessReturn;
-						result = subprocess_join(&subprocess, &subprocessReturn);
-						if(result != 0) {
-							printf("ERROR(2) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
-							exit(-1);
-						}
-						if(subprocessReturn != 0) {
-							printf("ERROR(3) during compression of file %s(return %d)\n", inputFilename.c_str(), subprocessReturn);
-
-	//TODO: copy file without compression if there was an error!
-						}
-
-						FILE *fp = subprocess_stdout(&subprocess);
-						if(fp != 0) {
-							fgets(tmp, 128, fp);
-						}
-						subprocess_destroy(&subprocess);
-					}
-					return std::string(tmp);
-				}, i);
+					int tempCounter = (temporaryFileCounter++);
+					return compressFile(inputFilename, tempCounter);
+				});
 			}
 		}
 		while(!quickpool::done()) {
