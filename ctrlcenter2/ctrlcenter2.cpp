@@ -431,6 +431,188 @@ std::string compressFile(std::string inputFilename, int tempCounter) {
 
 }
 
+// create archive ==================================================================================
+
+void createOrUpdateArchive() {
+	//try to load database
+	if(gConfiguration.database.readFileHashes(gConfiguration.databaseFilename) == true) {
+		printf("- loaded available database (%d entries)\n", gConfiguration.database.getNumberEntries());
+	} else {
+		printf("- no database found, start with new one\n");
+	}
+
+	// generate list of files to process
+	std::vector<std::string> filesToProcess;
+	std::vector<std::string> recursiveFolders;
+	uint64_t inputSetSize = 0;
+    std::function<void(const char *,bool,size_t)> callback = [&]( const char *name, bool is_dir, size_t fileSize ) {
+//	        printf( "%5s %s\n", is_dir ? "<dir>" : "", name );
+        if( is_dir ) {
+        	recursiveFolders.push_back(std::string(name));
+        } else {
+        	filesToProcess.emplace_back(name);
+        	inputSetSize += fileSize;
+        }
+    };
+
+    printf("- scan for files\n");
+	recursiveFolders.push_back(gConfiguration.inputFolder);
+	while(recursiveFolders.size() != 0) {
+		std::string dir = recursiveFolders.back() + "/";
+		recursiveFolders.pop_back();
+		tinydir(dir.c_str(), callback);
+	}
+	printf("   found %lu files (%s / %lu bytes)\n", filesToProcess.size(), humanize(inputSetSize).c_str(), inputSetSize);
+
+	printf("- generate hashes for all input files\n");
+	std::vector<std::future<std::string>> results(filesToProcess.size());
+	for(int i=0; i<filesToProcess.size(); ++i) {
+		results[i] = quickpool::async([&]() {
+			return hashFile(filesToProcess[i]);
+		});
+	}
+   	while(!quickpool::done()) {
+		printf("\r number files to hash: %7d         ", quickpool::number_open_tasks());
+		quickpool::wait(10);
+	}
+	printf("\r   finished hashing                              \n");
+
+	FileHashes filesHashes;
+	for(int i=0; i<results.size(); ++i) {
+		std::string res = results[i].get();
+		filesHashes.parseBuffer(res.c_str(), res.size());
+	}
+
+	// search for updates of files in FileHashes (hash changed, new file, deleted files?)
+	std::vector<FileHashes::CompareResult> compare = filesHashes.compareToFileHashes(gConfiguration.database);
+
+	// write hashes to filelist in output path
+
+	// create folder structure in output path
+	printf("- create output folder structure\n");
+	std::string cachedDir;
+	for(int i=0; i<filesHashes.getNumberEntries(); ++i) {
+		if(compare[i] != FileHashes::CompareResult::eSame) {		//changed or new?
+			std::string extractedFolder = extractFolderFromFilePath(filesHashes.getEntry(i).mPath);
+			if(cachedDir.compare(extractedFolder) != 0) {
+				cachedDir = extractedFolder;
+
+				if(gConfiguration.unittestPath.length() != 0) {
+					size_t pos = extractedFolder.find(gConfiguration.unittestPath);
+					if(pos != std::string::npos)
+						extractedFolder = extractedFolder.erase(pos, gConfiguration.unittestPath.length());
+				}
+
+				extractedFolder = gConfiguration.outputFolder + extractedFolder;
+
+//					printf("create %s\n", extractedFolder.c_str());
+				if(gConfiguration.dryRunFlag) {
+					printf("would now create dir %s\n", extractedFolder.c_str());
+				} else {
+					smartCreate(extractedFolder);
+				}
+			}
+		}
+		if(i%32==0) {
+			printf("\r number dirs to create: %7d        ", filesHashes.getNumberEntries()-i);
+		}
+	}
+	printf("\r   finished dir creation                                           \n");
+
+	// compress all files
+	printf("- compress changed files to output folder\n");
+
+	std::atomic<int> temporaryFileCounter{0};
+	std::vector<std::future<std::string>> compressResults(filesHashes.getNumberEntries());
+	for(int i=0; i<filesHashes.getNumberEntries(); ++i) {
+		if(compare[i] != FileHashes::CompareResult::eSame) {		//changed or new?
+			compressResults[i] = quickpool::async([&]() {
+				const std::string &inputFilename = filesHashes.getEntry(i).mPath;
+				int tempCounter = (temporaryFileCounter++);
+				return compressFile(inputFilename, tempCounter);
+			});
+		}
+	}
+	while(!quickpool::done()) {
+   		if(!gConfiguration.dryRunFlag)
+			printf("\r number files to process: %7d        ", quickpool::number_open_tasks());
+		quickpool::wait(10);
+	}
+	printf("\r   finished compression                                           \n");
+
+	//get output statistics
+	uint64_t outputSetSize = 0;
+    std::function<void(const char *,bool,size_t)> callbackSizeCalc = [&]( const char *name, bool is_dir, size_t fileSize ) {
+        if( is_dir ) {
+        	recursiveFolders.push_back(std::string(name));
+        } else {
+        	outputSetSize += fileSize;
+        }
+    };
+
+    printf("- scan for outputfiles\n");
+	recursiveFolders.push_back(gConfiguration.outputFolder);
+	while(recursiveFolders.size() != 0) {
+		std::string dir = recursiveFolders.back() + "/";
+		recursiveFolders.pop_back();
+		tinydir(dir.c_str(), callbackSizeCalc);
+	}
+	printf("   found %lu files (%s / %lu bytes)\n", filesToProcess.size(), humanize(outputSetSize).c_str(), outputSetSize);
+
+
+	// write FileHashes
+	printf("- writing filehashes.txt\n");
+	if(gConfiguration.dryRunFlag) {
+		printf("would now write filehash.txt to output folder\n");
+	} else {
+		std::string filehashesName = gConfiguration.outputFolder + "filehashes.txt";
+		filesHashes.saveFileHashes(filehashesName);
+	}
+
+	// merge filehashes into database
+	gConfiguration.database.mergeUpdates(filesHashes);
+
+	// write final database
+	printf("- writing new database file\n");
+	if(gConfiguration.dryRunFlag) {
+		printf("would now write new database\n");
+	} else {
+		gConfiguration.database.mergeUpdates(filesHashes);
+		if(gConfiguration.database.saveFileHashes(gConfiguration.databaseFilename) == false) {
+			printf("ERROR during writing database file!\n");
+		}
+	}
+}
+
+// verify archive ==================================================================================
+
+void verifyArchive() {
+
+}
+
+// merge lists =====================================================================================
+
+void mergeFilelistToDatabase() {
+	std::string filehashesName = gConfiguration.inputFolder+"filehashes.txt";
+
+	FileHashes filehashes;
+	filehashes.readFileHashes(filehashesName);
+
+	printf("- number database entries BEFORE update: %d\n", gConfiguration.database.getNumberEntries());
+	gConfiguration.database.mergeUpdates(filehashes);
+	printf("- number database entries AFTER update: %d\n", gConfiguration.database.getNumberEntries());
+
+	// write final database
+	printf("- writing new database file\n");
+	if(gConfiguration.dryRunFlag) {
+		printf("would now write new database\n");
+	} else {
+		if(gConfiguration.database.saveFileHashes(gConfiguration.databaseFilename) == false) {
+			printf("ERROR during writing database file!\n");
+		}
+	}
+}
+
 // main ============================================================================================
 
 int main(int argc, char **argv) {
@@ -441,7 +623,7 @@ int main(int argc, char **argv) {
 	arg_file *databaseFilename = arg_file0("d", "database", "<file>", "Database-File to use");
 	arg_lit *createFlag = arg_lit0("c", "create", "create initial backup");
 	arg_lit *verifyFlag = arg_lit0("v", "verify", "verify compressed structure");
-	arg_lit *mergeFlag = arg_lit0("m", "merge", "merge hashfile to FileHashes");
+	arg_lit *mergeFlag = arg_lit0("m", "merge", "merge hashfile to FileHashes(input-path is used to get filelist from)");
 	arg_file *unittestpath = arg_file0("u", "unittestpath", "<dir>", "directory which is NOT stored as part of the backup(used in unittests");
 	arg_lit *dryFlag = arg_lit0("", "dryrun", "only do dryrun, don't compress anything");
 	struct arg_end *end = arg_end(20);	//store up to 20 errors
@@ -507,6 +689,7 @@ int main(int argc, char **argv) {
 
 	if(verifyFlag->count != 0) {
 		printf("\n*mode: verify archive(compare filelist to uncompressed files in archive)\n");
+		verifyArchive();
 		goto exitTool;
 	}
 
@@ -519,158 +702,10 @@ int main(int argc, char **argv) {
 
 	if(createFlag->count != 0) {
 		printf("\n*mode: create new archive\n");
-
-		//try to load database
-		if(gConfiguration.database.readFileHashes(gConfiguration.databaseFilename) == true) {
-			printf("- loaded available database (%d entries)\n", gConfiguration.database.getNumberEntries());
-		} else {
-			printf("- no database found, start with new one\n");
-		}
-
-		// generate list of files to process
-		std::vector<std::string> filesToProcess;
-		std::vector<std::string> recursiveFolders;
-		uint64_t inputSetSize = 0;
-	    std::function<void(const char *,bool,size_t)> callback = [&]( const char *name, bool is_dir, size_t fileSize ) {
-//	        printf( "%5s %s\n", is_dir ? "<dir>" : "", name );
-	        if( is_dir ) {
-	        	recursiveFolders.push_back(std::string(name));
-	        } else {
-	        	filesToProcess.emplace_back(name);
-	        	inputSetSize += fileSize;
-	        }
-	    };
-
-	    printf("- scan for files\n");
-    	recursiveFolders.push_back(gConfiguration.inputFolder);
-    	while(recursiveFolders.size() != 0) {
-    		std::string dir = recursiveFolders.back() + "/";
-    		recursiveFolders.pop_back();
-    		tinydir(dir.c_str(), callback);
-    	}
-    	printf("   found %lu files (%s / %lu bytes)\n", filesToProcess.size(), humanize(inputSetSize).c_str(), inputSetSize);
-
-    	printf("- generate hashes for all input files\n");
-    	std::vector<std::future<std::string>> results(filesToProcess.size());
-    	for(int i=0; i<filesToProcess.size(); ++i) {
-    		results[i] = quickpool::async([&]() {
-    			return hashFile(filesToProcess[i]);
-    		});
-    	}
-       	while(!quickpool::done()) {
-    		printf("\r number files to hash: %7d         ", quickpool::number_open_tasks());
-    		quickpool::wait(10);
-    	}
-    	printf("\r   finished hashing                              \n");
-
-    	FileHashes filesHashes;
-    	for(int i=0; i<results.size(); ++i) {
-    		std::string res = results[i].get();
-    		filesHashes.parseBuffer(res.c_str(), res.size());
-    	}
-
-		// search for updates of files in FileHashes (hash changed, new file, deleted files?)
-    	std::vector<FileHashes::CompareResult> compare = filesHashes.compareToFileHashes(gConfiguration.database);
-
-		// write hashes to filelist in output path
-
-		// create folder structure in output path
-    	printf("- create output folder structure\n");
-    	std::string cachedDir;
-		for(int i=0; i<filesHashes.getNumberEntries(); ++i) {
-			if(compare[i] != FileHashes::CompareResult::eSame) {		//changed or new?
-				std::string extractedFolder = extractFolderFromFilePath(filesHashes.getEntry(i).mPath);
-				if(cachedDir.compare(extractedFolder) != 0) {
-					cachedDir = extractedFolder;
-
-					if(gConfiguration.unittestPath.length() != 0) {
-						size_t pos = extractedFolder.find(gConfiguration.unittestPath);
-						if(pos != std::string::npos)
-							extractedFolder = extractedFolder.erase(pos, gConfiguration.unittestPath.length());
-					}
-
-					extractedFolder = gConfiguration.outputFolder + extractedFolder;
-
-//					printf("create %s\n", extractedFolder.c_str());
-					if(gConfiguration.dryRunFlag) {
-						printf("would now create dir %s\n", extractedFolder.c_str());
-					} else {
-						smartCreate(extractedFolder);
-					}
-				}
-			}
-			if(i%32==0) {
-				printf("\r number dirs to create: %7d        ", filesHashes.getNumberEntries()-i);
-			}
-		}
-		printf("\r   finished dir creation                                           \n");
-
-		// compress all files
-		printf("- compress changed files to output folder\n");
-
-		std::atomic<int> temporaryFileCounter{0};
-		std::vector<std::future<std::string>> compressResults(filesHashes.getNumberEntries());
-		for(int i=0; i<filesHashes.getNumberEntries(); ++i) {
-			if(compare[i] != FileHashes::CompareResult::eSame) {		//changed or new?
-				compressResults[i] = quickpool::async([&]() {
-					const std::string &inputFilename = filesHashes.getEntry(i).mPath;
-					int tempCounter = (temporaryFileCounter++);
-					return compressFile(inputFilename, tempCounter);
-				});
-			}
-		}
-		while(!quickpool::done()) {
-       		if(!gConfiguration.dryRunFlag)
-				printf("\r number files to process: %7d        ", quickpool::number_open_tasks());
-			quickpool::wait(10);
-		}
-		printf("\r   finished compression                                           \n");
-
-		//get output statistics
-		uint64_t outputSetSize = 0;
-	    std::function<void(const char *,bool,size_t)> callbackSizeCalc = [&]( const char *name, bool is_dir, size_t fileSize ) {
-	        if( is_dir ) {
-	        	recursiveFolders.push_back(std::string(name));
-	        } else {
-	        	outputSetSize += fileSize;
-	        }
-	    };
-
-	    printf("- scan for outputfiles\n");
-    	recursiveFolders.push_back(gConfiguration.outputFolder);
-    	while(recursiveFolders.size() != 0) {
-    		std::string dir = recursiveFolders.back() + "/";
-    		recursiveFolders.pop_back();
-    		tinydir(dir.c_str(), callbackSizeCalc);
-    	}
-    	printf("   found %lu files (%s / %lu bytes)\n", filesToProcess.size(), humanize(outputSetSize).c_str(), outputSetSize);
-
-
-		// write FileHashes
-		printf("- writing filehashes.txt\n");
-		if(gConfiguration.dryRunFlag) {
-			printf("would now write filehash.txt to output folder\n");
-		} else {
-			std::string filehashesName = gConfiguration.outputFolder + "filehashes.txt";
-			filesHashes.saveFileHashes(filehashesName);
-		}
-
-		// merge filehashes into database
-		gConfiguration.database.mergeUpdates(filesHashes);
-
-		// write final database
-		printf("- writing new database file\n");
-		if(gConfiguration.dryRunFlag) {
-			printf("would now write new database\n");
-		} else {
-			gConfiguration.database.mergeUpdates(filesHashes);
-			if(gConfiguration.database.saveFileHashes(gConfiguration.databaseFilename) == false) {
-				printf("ERROR during writing database file!\n");
-			}
-		}
+		createOrUpdateArchive();
 	} else if(mergeFlag->count != 0) {
-		printf("\n*mode: merge old filelist to FileHashes\n");
-
+		printf("\n*mode: merge old filelist to database\n");
+		mergeFilelistToDatabase();
 	}
 
 exitTool:
