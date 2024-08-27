@@ -405,31 +405,57 @@ std::string compressFile(std::string inputFilename, int tempCounter) {
 	} else {
 		subprocess_s subprocess;
 		int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
-		if(result != 0) {
+		bool errorHappened = false;
+		if(result == 0) {
+			int subprocessReturn;
+			result = subprocess_join(&subprocess, &subprocessReturn);
+			if(result == 0) {
+				if(subprocessReturn != 0) {
+					printf("ERROR(3) during compression of file %s(return %d)\n", inputFilename.c_str(), subprocessReturn);
+					errorHappened = true;
+				}
+			} else {
+				printf("ERROR(2) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
+				errorHappened = true;
+			}
+			FILE *fp = subprocess_stdout(&subprocess);
+			if(fp != 0) {
+				fgets(tmp, 128, fp);
+			}
+			subprocess_destroy(&subprocess);
+		} else {
 			printf("ERROR(1) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
-			exit(-1);
+			errorHappened = true;
 		}
-		int subprocessReturn;
-		result = subprocess_join(&subprocess, &subprocessReturn);
-		if(result != 0) {
-			printf("ERROR(2) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
-			exit(-1);
+		if(errorHappened) {
+			//TODO: copy file uncompressed because there was an error!
 		}
-		if(subprocessReturn != 0) {
-			printf("ERROR(3) during compression of file %s(return %d)\n", inputFilename.c_str(), subprocessReturn);
-
-//TODO: copy file without compression if there was an error!
-		}
-
-		FILE *fp = subprocess_stdout(&subprocess);
-		if(fp != 0) {
-			fgets(tmp, 128, fp);
-		}
-		subprocess_destroy(&subprocess);
 	}
 	return std::string(tmp);
-
 }
+
+std::string decompressFile(std::string inputFilename, int tempCounter) {
+	std::string extension = extractFileExtensionFromFilePatch(inputFilename);
+	extension = toLower(extension);
+
+	const char* cmdLine[10] = {0};	//to have additional zero elements to mark the end for subprocess
+	if(extension.compare("lepton")==0) {
+
+	} else if(extension.compare("pcf")==0) {
+
+	} else if(extension.compare("zpaq") == 0) {
+
+	} else {
+		//uncompressed because of an error? then compare hash without decompression
+	}
+
+	//generate hash from decompressed file
+
+	//delete decompressed file
+
+	//return newly created hash
+}
+
 
 // create archive ==================================================================================
 
@@ -587,6 +613,16 @@ void createOrUpdateArchive() {
 // verify archive ==================================================================================
 
 void verifyArchive() {
+	std::string filehashesName = gConfiguration.inputFolder+"filehashes.txt";
+
+	FileHashes filehashes;
+	filehashes.readFileHashes(filehashesName);
+
+	printf("- number of fileentries to check: %d\n", filehashes.getNumberEntries());
+	for(int i=0; i<filehashes.getNumberEntries(); ++i) {
+		FileHashes::FileEntry &entry = filehashes.getEntry(i);
+
+	}
 
 }
 
