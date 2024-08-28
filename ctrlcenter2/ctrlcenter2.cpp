@@ -289,6 +289,38 @@ bool FileHashes::saveFileHashes(const std::string &filePath) {
 	return true;
 }
 
+std::string runSubprocess(const char* cmdLine[10]) {
+	char tmp[128];
+	subprocess_s subprocess;
+	int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
+	bool errorHappened = false;
+	if(result == 0) {
+		int subprocessReturn;
+		result = subprocess_join(&subprocess, &subprocessReturn);
+		if(result == 0) {
+			if(subprocessReturn != 0) {
+				printf("ERROR(3) during decompression of file %s(return %d)\n", inputFilename.c_str(), subprocessReturn);
+				errorHappened = true;
+			}
+		} else {
+			printf("ERROR(2) during decompression of file %s(result %d)\n", inputFilename.c_str(), result);
+			errorHappened = true;
+		}
+		FILE *fp = subprocess_stdout(&subprocess);
+		if(fp != 0) {
+			fgets(tmp, 128, fp);
+		}
+		subprocess_destroy(&subprocess);
+	} else {
+		printf("ERROR(1) during decompression of file %s(result %d)\n", inputFilename.c_str(), result);
+		errorHappened = true;
+	}
+	if(errorHappened) {
+		//hhmmm???? report error?
+	}
+	return std::string(tmp);
+}
+
 std::string hashFile(std::string fileToProcess) {
 	std::string executable = gConfiguration.toolsFolder + "meowhash";
 
@@ -438,16 +470,51 @@ std::string decompressFile(std::string inputFilename, int tempCounter) {
 	std::string extension = extractFileExtensionFromFilePatch(inputFilename);
 	extension = toLower(extension);
 
+	std::string exe;
+	std::string tmp;
+	std::string outputFile;
+	outputFile = gConfiguration.temporaryFolder+inputFilename;
+
 	const char* cmdLine[10] = {0};	//to have additional zero elements to mark the end for subprocess
+	bool runUncompressor = true;
 	if(extension.compare("lepton")==0) {
-
+#ifdef _WIN32
+		exe = gConfiguration.toolsFolder + "lepton.exe";
+#else
+		exe = gConfiguration.toolsFolder + "lepton";
+#endif
+		cmdLine[0] = exe.c_str();
+		cmdLine[1] = "-singlethread";
+		cmdLine[2] = "-allowprogressive";
+		cmdLine[3] = inputFilename.c_str();
+		cmdLine[4] = outputFile.c_str();
 	} else if(extension.compare("pcf")==0) {
-
+		exe = gConfiguration.toolsFolder + "precomp-cpp";
+		cmdLine[0] = exe.c_str();
+		cmdLine[1] = "-r";
+		cmdLine[2] = "-lt1";
+		tmp = "-o"+outputFile;
+		cmdLine[3] = tmp.c_str();
+		cmdLine[4] = inputFilename.c_str();
 	} else if(extension.compare("zpaq") == 0) {
-
+		exe = gConfiguration.toolsFolder + "zpaq715";
+		cmdLine[0] = exe.c_str();
+		cmdLine[1] = "x";
+		cmdLine[2] = inputFilename.c_str();
+		cmdLine[3] = "-to";
+		cmdLine[4] = outputFile.c_str();
+		cmdLine[5] = "-t1";
 	} else {
 		//uncompressed because of an error? then compare hash without decompression
+		runUncompressor = false;
+		outputFile = inputFilename;
 	}
+
+	if(runUncompressor) {
+		runSubprocess(cmdLine);
+
+	}
+
 
 	//generate hash from decompressed file
 
