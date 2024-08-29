@@ -19,13 +19,13 @@ public:
 #else
       if((mIsInErrorState == true) && (mErrorIsHandled == false)) {
 #endif
-         assert(false, "error not checked!");
+         ASSERT(false, "error not checked!");
       }
    }
 
    void enterErrorState(const char *errorString) {
       if(mIsInErrorState) {
-         assert(false, "signaling an error and already in error state!");
+         ASSERT(false, "signaling an error and already in error state!");
       }
       mIsInErrorState = true;
       mErrorIsHandled = false;
@@ -46,7 +46,7 @@ public:
    }
 
    const T& valueOrDie() const {
-      assert(mIsInErrorState == false, "Error set but value requested");
+      ASSERT(mIsInErrorState == false, "Error set but value requested");
       return mValue;
    }
 

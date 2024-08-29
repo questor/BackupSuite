@@ -17,6 +17,7 @@
 #include "quickpool.h"
 #include "concurrentqueue/concurrentqueue.h"
 
+#include "valorerr.h"
 
 // utils ===========================================================================================
 
@@ -132,6 +133,48 @@ const char *skipNonNewline(const char *ptr) {
 		++ptr;
 	}
 	return ptr;
+}
+
+bool deleteFile(std::string &path) {
+#if _WIN32
+	const BOOL res = ::DeleteFileW(path.c_str());
+	return (res != 0);
+#else
+	const int res = unlink(path.c_str());
+	return (res == 0);
+#endif
+}
+
+bool copyFile(std::string &sourcePath, std::string &destPath) {
+#if _WIN32
+	return ::CopyFileW(sourcePath.c_str(), destPath.c_str(), false) != 0;
+#else
+	int result = -1;
+	const int sourceFH = ::open(sourcePath.c_str(), O_RDONLY);
+	if(sourceFH >= 0) {
+		const int destFH = ::open(destPath.c_str(), O_WRONLY|O_TRUNC|O_CREAT, 0777);
+		if(destFH >= 0) {
+			const int buffersize = 4*1024;
+			char buffer[buffersize];
+			int readCount = 0;
+			int writeCount = 0;
+			do {
+				result = ::read(sourceFH, buffer, buffersize);
+				if(result >= 0) {
+					readCount = result;
+					for(writeCount = 0; (result >= 0) && (writeCount < readCount); writeCount += result) {
+						result = ::write(destFH, buffer+writeCount, readCount-writeCount);
+					}
+				} else if(errno == EINTR) {
+					result = 0;
+				}
+			} while((result >= 0) && (readCount > 0));
+			::close(destFH);
+		}
+		::close(sourceFH);
+	}
+	return result >= 0;
+#endif
 }
 
 // FileHashes ===========================================================================================
@@ -289,22 +332,22 @@ bool FileHashes::saveFileHashes(const std::string &filePath) {
 	return true;
 }
 
-std::string runSubprocess(const char* cmdLine[10]) {
-	char tmp[128];
+ValOrErr<std::string> runSubprocess(const char* cmdLine[10]) {
+	ValOrErr<std::string> ret;
+	char tmp[130] = {0};
 	subprocess_s subprocess;
 	int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
-	bool errorHappened = false;
 	if(result == 0) {
 		int subprocessReturn;
 		result = subprocess_join(&subprocess, &subprocessReturn);
 		if(result == 0) {
 			if(subprocessReturn != 0) {
-				printf("ERROR(3) during decompression of file %s(return %d)\n", inputFilename.c_str(), subprocessReturn);
-				errorHappened = true;
+				ret.enterErrorState("ERROR Subprocess(3)");
+//				printf("ERROR(3) during decompression of file %s(return %d)\n", inputFilename.c_str(), subprocessReturn);
 			}
 		} else {
-			printf("ERROR(2) during decompression of file %s(result %d)\n", inputFilename.c_str(), result);
-			errorHappened = true;
+			ret.enterErrorState("ERROR Subprocess(2)");
+//			printf("ERROR(2) during decompression of file %s(result %d)\n", inputFilename.c_str(), result);
 		}
 		FILE *fp = subprocess_stdout(&subprocess);
 		if(fp != 0) {
@@ -312,44 +355,31 @@ std::string runSubprocess(const char* cmdLine[10]) {
 		}
 		subprocess_destroy(&subprocess);
 	} else {
-		printf("ERROR(1) during decompression of file %s(result %d)\n", inputFilename.c_str(), result);
-		errorHappened = true;
+		ret.enterErrorState("ERROR Subprocess(1)");
+//		printf("ERROR(1) during decompression of file %s(result %d)\n", inputFilename.c_str(), result);
 	}
-	if(errorHappened) {
-		//hhmmm???? report error?
+	if(ret.getErrorState() == false) {
+		ret.setValue(tmp);
 	}
-	return std::string(tmp);
+	return ret;
 }
 
 std::string hashFile(std::string fileToProcess) {
 	std::string executable = gConfiguration.toolsFolder + "meowhash";
 
-	const char *cmdLine[] = {executable.c_str(), fileToProcess.c_str(), "--nologo", nullptr};
-	subprocess_s subprocess;
-	int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
-	if(result != 0) {
-		printf("ERROR(1) during hashing of file %s\n", fileToProcess.c_str());
-		exit(-1);
-	}
-	int subprocessReturn;
-	result = subprocess_join(&subprocess, &subprocessReturn);
-	if(result != 0) {
-		printf("ERROR(2) during hashing of file %s\n", fileToProcess.c_str());
-		exit(-1);
-	}
-	if(subprocessReturn != 0) {
-		printf("ERROR(3) during hashing of file %s\n", fileToProcess.c_str());
-		exit(-1);
-	}
+	const char *cmdLine[10] = {0};
+	cmdLine[0] = executable.c_str();
+	cmdLine[1] = fileToProcess.c_str();
+	cmdLine[2] = "--nologo";
 
-	FILE *fp = subprocess_stdout(&subprocess);
-	char tmp[128];
-	if(fp != 0) {
-		fgets(tmp, 128, fp);
-	}
-	subprocess_destroy(&subprocess);
+	ValOrErr<std::string> hashResult = runSubprocess(cmdLine);
 
-	return std::string(tmp);
+	if(hashResult.getErrorState()) {
+		printf("ERROR during hashing of %s (%s)\n", fileToProcess.c_str(), hashResult.getErrorString());
+		exit(-1);
+	}
+	std::string ret = hashResult.valueOrDie();
+	return ret;
 }
 
 std::string compressFile(std::string inputFilename, int tempCounter) {
@@ -425,7 +455,7 @@ std::string compressFile(std::string inputFilename, int tempCounter) {
 		//-rw-rw-r-- 1 devenv devenv  1517409 Jun 13 16:59 test.zpaq (-m4) (13sec)
 	}
 
-	char tmp[128];
+	std::string retStr;
 	if(gConfiguration.dryRunFlag) {
 		printf("would start ");
 		int j=0;
@@ -435,35 +465,21 @@ std::string compressFile(std::string inputFilename, int tempCounter) {
 		}
 		printf("\n");
 	} else {
-		subprocess_s subprocess;
-		int result = subprocess_create(cmdLine, subprocess_option_no_window|subprocess_option_inherit_environment, &subprocess);
-		bool errorHappened = false;
-		if(result == 0) {
-			int subprocessReturn;
-			result = subprocess_join(&subprocess, &subprocessReturn);
-			if(result == 0) {
-				if(subprocessReturn != 0) {
-					printf("ERROR(3) during compression of file %s(return %d)\n", inputFilename.c_str(), subprocessReturn);
-					errorHappened = true;
-				}
-			} else {
-				printf("ERROR(2) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
-				errorHappened = true;
+		ValOrErr<std::string> compressResult = runSubprocess(cmdLine);
+		if(compressResult.getErrorState() == true) {
+			printf("ERROR during compression of %s (%s)\n", inputFilename.c_str(), compressResult.getErrorString());
+
+			if(copyFile(inputFilename, outputFilename) == false) {
+				printf("ERROR during file copy!\n");
+				exit(-1);
 			}
-			FILE *fp = subprocess_stdout(&subprocess);
-			if(fp != 0) {
-				fgets(tmp, 128, fp);
-			}
-			subprocess_destroy(&subprocess);
+
+			retStr = "ERROR";
 		} else {
-			printf("ERROR(1) during compression of file %s(result %d)\n", inputFilename.c_str(), result);
-			errorHappened = true;
-		}
-		if(errorHappened) {
-			//TODO: copy file uncompressed because there was an error!
+			retStr = compressResult.valueOrDie();
 		}
 	}
-	return std::string(tmp);
+	return retStr;
 }
 
 std::string decompressFile(std::string inputFilename, int tempCounter) {
@@ -511,16 +527,21 @@ std::string decompressFile(std::string inputFilename, int tempCounter) {
 	}
 
 	if(runUncompressor) {
-		runSubprocess(cmdLine);
-
+		ValOrErr<std::string> uncompResult = runSubprocess(cmdLine);
+		if(uncompResult.getErrorState()) {
+			printf("error during uncompression of %s (%s)\n", inputFilename.c_str(), uncompResult.getErrorString());
+			return std::string("ERROR");
+		}
 	}
 
-
 	//generate hash from decompressed file
+	std::string uncompressedHash = hashFile(outputFile.c_str());
 
 	//delete decompressed file
+	deleteFile(outputFile);
 
 	//return newly created hash
+	return uncompressedHash;
 }
 
 
