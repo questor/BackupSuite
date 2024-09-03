@@ -535,7 +535,7 @@ std::string decompressFile(std::string inputFilename, int tempCounter) {
 	}
 
 	//generate hash from decompressed file
-	std::string uncompressedHash = hashFile(outputFile.c_str());
+	std::string uncompressedHash = hashFile(outputFile);
 
 	//delete decompressed file
 	deleteFile(outputFile);
@@ -581,8 +581,9 @@ void createOrUpdateArchive() {
 	printf("- generate hashes for all input files\n");
 	std::vector<std::future<std::string>> results(filesToProcess.size());
 	for(int i=0; i<filesToProcess.size(); ++i) {
-		results[i] = quickpool::async([&]() {
-			return hashFile(filesToProcess[i]);
+		std::string file = filesToProcess[i];
+		results[i] = quickpool::async([=]() {
+			return hashFile(file);
 		});
 	}
    	while(!quickpool::done()) {
@@ -640,9 +641,9 @@ void createOrUpdateArchive() {
 	std::vector<std::future<std::string>> compressResults(filesHashes.getNumberEntries());
 	for(int i=0; i<filesHashes.getNumberEntries(); ++i) {
 		if(compare[i] != FileHashes::CompareResult::eSame) {		//changed or new?
-			compressResults[i] = quickpool::async([&]() {
-				const std::string &inputFilename = filesHashes.getEntry(i).mPath;
-				int tempCounter = (temporaryFileCounter++);
+			const std::string &inputFilename = filesHashes.getEntry(i).mPath;
+			int tempCounter = (temporaryFileCounter++);
+			compressResults[i] = quickpool::async([=]() {
 				return compressFile(inputFilename, tempCounter);
 			});
 		}

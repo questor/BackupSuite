@@ -12,7 +12,7 @@ oneTimeSetUp() {
 #}
 
 testDatabaseCreation() {
-	gdb --args ../t2-output/linux_x86-clang-debug-default/ctrlcenter2 -i 01SetOfFiles -u 01SetOfFiles -o /dev/shm/_test -c -t ~/BackupSuite/bin_lnx64_release/ -d /dev/shm/_test/db.txt
+	../t2-output/linux_x86-clang-debug-default/ctrlcenter2 -i 01SetOfFiles -u 01SetOfFiles -o /dev/shm/_test -c -t ~/BackupSuite/bin_lnx64_release/ -d /dev/shm/_test/db.txt
 	diff -u /dev/shm/_test/db.txt expectedFiles/db01.txt
 	rtrn=$?
 	assertEquals 'diff found in database after initial import!' ${rtrn} 0
