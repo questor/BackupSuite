@@ -343,11 +343,9 @@ ValOrErr<std::string> runSubprocess(const char* cmdLine[10]) {
 		if(result == 0) {
 			if(subprocessReturn != 0) {
 				ret.enterErrorState("ERROR Subprocess(3)");
-//				printf("ERROR(3) during decompression of file %s(return %d)\n", inputFilename.c_str(), subprocessReturn);
 			}
 		} else {
 			ret.enterErrorState("ERROR Subprocess(2)");
-//			printf("ERROR(2) during decompression of file %s(result %d)\n", inputFilename.c_str(), result);
 		}
 		FILE *fp = subprocess_stdout(&subprocess);
 		if(fp != 0) {
@@ -356,7 +354,6 @@ ValOrErr<std::string> runSubprocess(const char* cmdLine[10]) {
 		subprocess_destroy(&subprocess);
 	} else {
 		ret.enterErrorState("ERROR Subprocess(1)");
-//		printf("ERROR(1) during decompression of file %s(result %d)\n", inputFilename.c_str(), result);
 	}
 	if(ret.getErrorState() == false) {
 		ret.setValue(tmp);
@@ -413,7 +410,7 @@ std::string compressFile(std::string inputFilename, int tempCounter) {
 		cmdLine[3] = inputFilename.c_str();
 		outputFile = outputFilename + ".lepton";
 		cmdLine[4] = outputFile.c_str();
-	} else if(extension.compare("mp3")==0) {
+	} else if(extension.compare("mp3")==0) {			//don't recompress with lzma, it's bigger afterwards!
 		exe = gConfiguration.toolsFolder + "precomnp-cpp";
 		cmdLine[0] = exe.c_str();
 		cmdLine[1] = "-lt1";
@@ -482,7 +479,7 @@ std::string compressFile(std::string inputFilename, int tempCounter) {
 	return retStr;
 }
 
-std::string decompressFile(std::string inputFilename, int tempCounter) {
+std::string decompressFile(std::string inputFilename) {
 	std::string extension = extractFileExtensionFromFilePatch(inputFilename);
 	extension = toLower(extension);
 
@@ -493,7 +490,7 @@ std::string decompressFile(std::string inputFilename, int tempCounter) {
 
 	const char* cmdLine[10] = {0};	//to have additional zero elements to mark the end for subprocess
 	bool runUncompressor = true;
-	if(extension.compare("lepton")==0) {
+	if((extension.compare("jpg")==0) || (extension.compare("jpeg")==0)) {
 #ifdef _WIN32
 		exe = gConfiguration.toolsFolder + "lepton.exe";
 #else
@@ -502,29 +499,34 @@ std::string decompressFile(std::string inputFilename, int tempCounter) {
 		cmdLine[0] = exe.c_str();
 		cmdLine[1] = "-singlethread";
 		cmdLine[2] = "-allowprogressive";
+		inputFilename += ".lepton";
 		cmdLine[3] = inputFilename.c_str();
 		cmdLine[4] = outputFile.c_str();
-	} else if(extension.compare("pcf")==0) {
+	} else if((extension.compare("mp3")==0) ||
+			  (extension.compare("png")==0) ||
+			  (extension.compare("pdf")==0) ||
+			  (extension.compare("zip")==0) ||
+			  (extension.compare("gzip")==0) ||
+			  (extension.compare("bzip2")==0) ) {
 		exe = gConfiguration.toolsFolder + "precomp-cpp";
 		cmdLine[0] = exe.c_str();
 		cmdLine[1] = "-r";
 		cmdLine[2] = "-lt1";
 		tmp = "-o"+outputFile;
 		cmdLine[3] = tmp.c_str();
+		inputFilename += ".pcf";
 		cmdLine[4] = inputFilename.c_str();
-	} else if(extension.compare("zpaq") == 0) {
+	} else {
 		exe = gConfiguration.toolsFolder + "zpaq715";
 		cmdLine[0] = exe.c_str();
 		cmdLine[1] = "x";
+		inputFilename += ".zpaq";
 		cmdLine[2] = inputFilename.c_str();
 		cmdLine[3] = "-to";
 		cmdLine[4] = outputFile.c_str();
 		cmdLine[5] = "-t1";
-	} else {
-		//uncompressed because of an error? then compare hash without decompression
-		runUncompressor = false;
-		outputFile = inputFilename;
 	}
+	//TODO: how to find uncompressed files because there were errors?!
 
 	if(runUncompressor) {
 		ValOrErr<std::string> uncompResult = runSubprocess(cmdLine);
@@ -708,11 +710,39 @@ void verifyArchive() {
 	filehashes.readFileHashes(filehashesName);
 
 	printf("- number of fileentries to check: %d\n", filehashes.getNumberEntries());
+	printf("- generate hashes for all input files\n");
+	std::vector<std::future<std::string>> results(filehashes.getNumberEntries());
 	for(int i=0; i<filehashes.getNumberEntries(); ++i) {
 		FileHashes::FileEntry &entry = filehashes.getEntry(i);
-
+		std::string filename = gConfiguration.inputFolder + entry.mPath;
+		results[i] = quickpool::async([=]() {
+			return decompressFile(filename);
+		});
 	}
+   	while(!quickpool::done()) {
+		printf("\r number files to hash: %7d         ", quickpool::number_open_tasks());
+		quickpool::wait(10);
+	}
+	printf("\r   finished hashing                              \n");
 
+	printf("- comparing hashes\n");
+	for(int i=0; i<filehashes.getNumberEntries(); ++i) {
+		std::string &filehashDatabase = filehashes.getEntry(i).mHashValue;
+		std::string filehashComputed = results[i].get();			//still needs to be split
+
+		const char *startToken = filehashComputed.c_str();
+		const char *readCursor = skipNonWhitespace(startToken);
+		std::string hashFunc(startToken, readCursor-startToken);
+
+		startToken = skipWhitespace(readCursor);
+		readCursor = skipNonWhitespace(startToken);
+		std::string hashValue(startToken, readCursor-startToken);
+
+		if(filehashDatabase.compare(hashValue) != 0) {
+			printf("ERROR: hash mismatch found! %s : <%s> <%s>\n", filehashes.getEntry(i).mPath.c_str(), filehashDatabase.c_str(), hashValue.c_str());
+		}
+	}
+	printf("- finished comparing hashes\n");
 }
 
 // merge lists =====================================================================================
@@ -743,7 +773,7 @@ void mergeFilelistToDatabase() {
 int main(int argc, char **argv) {
 	arg_lit *helpFlag = arg_lit0("h", "help", "prints this help");
 	arg_file *inputDir = arg_file1("i", "input", "<dir>", "Folder to Backup FROM");
-	arg_file *outputDir = arg_file1("o", "output", "<dir>", "Folder to Backup TO");
+	arg_file *outputDir = arg_file0("o", "output", "<dir>", "Folder to Backup TO");
 	arg_file *tools = arg_file0("t", "tools", "<dir>", "Folder to compiled tools");
 	arg_file *databaseFilename = arg_file0("d", "database", "<file>", "Database-File to use");
 	arg_lit *createFlag = arg_lit0("c", "create", "create initial backup");

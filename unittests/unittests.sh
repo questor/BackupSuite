@@ -21,6 +21,10 @@ testDatabaseCreation() {
 	assertEquals 'diff found in filehashes after initial import!' ${rtrn} 0
 }
 
+testVerifyFirstDatabase() {
+	../t2-output/linux_x86-clang-debug-default/ctrlcenter2 -i /dev/shm/_test -v -t ~/BackupSuite/bin_lnx64_release/ -d /dev/shm/_test/db.txt
+}
+
 testFirstUpdate() {
 	../t2-output/linux_x86-clang-debug-default/ctrlcenter2 -i 02ChangedSet -u 02ChangedSet -o /dev/shm/_test -c -t ~/BackupSuite/bin_lnx64_release/ -d /dev/shm/_test/db.txt
 	diff -u /dev/shm/_test/db.txt expectedFiles/db02.txt
