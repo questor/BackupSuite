@@ -19,6 +19,8 @@
 
 #include "valorerr.h"
 
+// maybe https://github.com/ArthurSonzogni/FTXUI would be a good idea to be integrated to show text-uis
+
 // utils ===========================================================================================
 
 std::string replaceAll(std::string &input, std::string searchFor, std::string replaceBy) {
